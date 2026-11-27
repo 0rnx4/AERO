@@ -405,7 +405,7 @@ local function SelectTarget(partMode, stickyKey)
                 if part and part.Parent then
                     local entry = A.cache[p]
                     local sp, on = cam:WorldToViewportPoint(part.Position)
-                    if on and sp.Z > 0 then
+                    if sp.Z > 0 then
                         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                         local dMax = (p == lockedP) and fov * 1.25 or fov
                         if d <= dMax then
@@ -418,6 +418,22 @@ local function SelectTarget(partMode, stickyKey)
         end
     end
     if sticky and stickyD and stickyD <= fov * 1.25 and (not best or best == sticky or stickyD < bestD * 1.8) then
+        if not VisCached(sticky, stickyPart, sticky.Character) then
+            for _, p in ipairs(A.players or Players:GetPlayers()) do
+                if p ~= sticky and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
+                    local part2 = ResolvePart(p, partMode)
+                    if part2 and part2.Parent then
+                        local sp2 = cam:WorldToViewportPoint(part2.Position)
+                        if sp2.Z > 0 then
+                            local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
+                            if d2 <= fov and d2 <= math.max(stickyD * 1.5, 40) and VisCached(p, part2, p.Character) then
+                                return p, part2
+                            end
+                        end
+                    end
+                end
+            end
+        end
         return sticky, stickyPart
     end
     if best and bestPart and not VisCached(best, bestPart, best.Character) then
@@ -426,7 +442,7 @@ local function SelectTarget(partMode, stickyKey)
                 local part2 = ResolvePart(p, partMode)
                 if part2 and part2.Parent then
                     local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
-                    if on2 and sp2.Z > 0 then
+                    if sp2.Z > 0 then
                         local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
                         if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and VisCached(p, part2, p.Character) then
                             return p, part2
@@ -1577,7 +1593,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.17", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.18", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1968,4 +1984,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.17 loaded.")
+print("[AERO] v8.18 loaded.")
