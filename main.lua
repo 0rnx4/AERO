@@ -354,16 +354,21 @@ local function PredictPos(part, entry)
     if not cam then return part.Position end
     local ping = A.ping or 0.05
     if ping ~= ping or ping < 0 then ping = 0.08 end
-    if ping > 0.13 then ping = 0.13 end
+    if ping > 0.20 then ping = 0.20 end
     local t = ping + (A.dt or 0) * 0.5
     local vel = entry.vel or Vector3.new()
     local off = vel * t
     local acc = entry.accel
     if acc then off = off + acc * (0.5 * t * t) end
     local yUse = off.Y * 0.35
+    local airF = 0
     local airT = entry.airTime or 0
-    if airT > 0.03 then
-        local airF = math.min(1, airT / 0.12)
+    if airT > 0.03 then airF = math.min(1, airT / 0.12) end
+    if acc and acc.Y < -40 then
+        local accAir = math.min(1, (-acc.Y - 40) / 40)
+        if accAir > airF then airF = accAir end
+    end
+    if airF > 0.05 then
         local grav = 196.2
         pcall(function() local g = Workspace.Gravity if type(g) == "number" and g > 0 and g == g then grav = g end end)
         local yBal = vel.Y * t - 0.5 * grav * t * t
@@ -372,12 +377,14 @@ local function PredictPos(part, entry)
     off = Vector3.new(off.X, yUse, off.Z)
     local predScale = C.silentPredictScale or 100
     off = off * (predScale / 100)
-    if off.Magnitude > 6 then off = off.Unit * 6 end
+    local capL = math.max(6, vel.Magnitude * t * 1.2)
+    if capL > 18 then capL = 18 end
+    if off.Magnitude > capL then off = off.Unit * capL end
     local jitter = Vector3.new(
         (math.random() - 0.5) * 2,
         (math.random() - 0.5) * 2,
         (math.random() - 0.5) * 2
-    ) * 0.15
+    ) * 0.08
     local g = part.Position + off + jitter
     if g.X ~= g.X or g.Y ~= g.Y or g.Z ~= g.Z then return part.Position end
     return g
@@ -523,14 +530,14 @@ local function CacheStep(dt)
                         local okA, blended = pcall(function()
                             local a = hrp.AssemblyLinearVelocity
                             if a and raw.Magnitude > 3 and a.Magnitude > 3 and a.Magnitude < 400 and a:Dot(raw) > 0 then
-                                return raw:Lerp(a, 0.65)
+                                return raw:Lerp(a, 0.85)
                             end
                             return nil
                         end)
                         if okA and blended then raw = blended end
                         local nv = e.vel:Lerp(raw, 1 - 0.55 ^ (dt * 60))
                         local dv = nv - e.vel
-                        local maxDv = 260 * dt + 6
+                        local maxDv = 340 * dt + 7
                         if dv.Magnitude > maxDv then nv = e.vel + dv.Unit * maxDv end
                         if nv.Magnitude < 0.5 then nv = Vector3.new() end
                         local acc = (nv - e.vel) / dt
@@ -1226,7 +1233,7 @@ local function FovStep()
             A.baseCand = cur
             A.baseStable = 0
         end
-        if cur >= 45 and ((A.baseStable >= 40 and (not A.learnedBase or cur <= A.learnedBase)) or A.baseStable >= 240 or (A.frame < 300 and A.baseStable >= 40)) then A.learnedBase = cur end
+        if cur >= 45 and ((A.baseStable >= 40 and (not A.learnedBase or cur <= A.learnedBase)) or A.baseStable >= 240 or (A.frame < 900 and A.baseStable >= 40)) then A.learnedBase = cur end
     end
     if not C.fovEnabled then
         if A.fovApplied then
@@ -1680,7 +1687,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.21", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.22", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -2072,4 +2079,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.21 loaded.")
+print("[AERO] v8.22 loaded.")
