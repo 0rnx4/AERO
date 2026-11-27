@@ -788,8 +788,8 @@ local function IsFireShaped(self, ...)
     if not named then return false end
     if select("#", ...) < 6 then return false end
     local a1, a2, a3, a4, a5, a6 = ...
-    return type(a1) == "string" and typeof(a2) == "Vector3" and typeof(a3) == "Vector3"
-        and typeof(a4) == "Instance" and typeof(a5) == "Vector3" and type(a6) == "number"
+    return (type(a1) == "string" or typeof(a1) == "Instance") and typeof(a2) == "Vector3" and typeof(a3) == "Vector3"
+        and (a4 == nil or typeof(a4) == "Instance") and typeof(a5) == "Vector3" and type(a6) == "number"
 end
 local function RefreshSilentTarget()
     if not C.silentEnabled then
@@ -822,6 +822,37 @@ local function AfterBend()
     A.fireHeldAt = tick()
 end
 
+local function LastResortTarget()
+    local cam = A.cam
+    if not cam or not LP then return nil, nil end
+    local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    local fov = EffFOV(C.silentFOV)
+    local bestP, bestPart, bestD = nil, nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            local okE, en = pcall(IsEnemy, p, C.teamCheck)
+            if okE and en then
+                local char = p.Character
+                local hum = char and GetHum(char)
+                if hum and hum.Health > 0 then
+                    local okP, prot = pcall(IsProtected, p)
+                    if not (okP and prot) then
+                        local part = ResolvePart(p, C.silentPart)
+                        if part and part.Parent then
+                            local sp = cam:WorldToViewportPoint(part.Position)
+                            if sp.Z > 0 then
+                                local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                                if d <= fov and d < bestD then bestD = d bestP = p bestPart = part end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestP, bestPart
+end
+
 local AC_PATTERNS = {"detect", "ban", "kick", "iac", "respond", "report", "anticheat", "ac_", "integrity", "flag"}
 local function IsAcRemote(remote)
     if not remote then return false end
@@ -848,13 +879,28 @@ local function InstallHooks()
         local ncc = newcclosure or function(f) return f end
         local inHook = false
         local dispatched = false
+        local function dispatch(self, ...)
+            dispatched = true
+            return A.oldNamecall(self, ...)
+        end
         local function handleFire(self, ...)
             if self ~= A.fireRemote then return false end
             A.silentRollOk = nil
-            if not A.silentPartObj then RefreshSilentTarget() end
-            local goal = SilentGoal()
-            if not goal then return false end
+            if not A.silentPartObj or not A.silentTarget or not IsAlive(A.silentTarget) then RefreshSilentTarget() end
+            local okG, goal = pcall(SilentGoal)
+            if not okG then goal = nil end
             local part = A.silentPartObj
+            if not goal then
+                RefreshSilentTarget()
+                okG, goal = pcall(SilentGoal)
+                if not okG then goal = nil end
+                part = A.silentPartObj
+                if not goal and A.silentRollOk ~= false then
+                    local _, lpart = LastResortTarget()
+                    if lpart then part = lpart goal = lpart.Position end
+                end
+            end
+            if not goal then return false end
             if not part or not part.Parent then return false end
             if select("#", ...) < 5 then return false end
             local args = {...}
@@ -866,9 +912,34 @@ local function InstallHooks()
             args[4] = part
             args[5] = goal
             AfterBend()
-            dispatched = true
-            local r = table.pack(A.oldNamecall(self, table.unpack(args)))
+            local r = table.pack(dispatch(self, table.unpack(args)))
             return true, table.unpack(r, 1, r.n)
+        end
+        local function hookCore(self, ...)
+            if A.unloaded then return dispatch(self, ...) end
+            if inHook then return dispatch(self, ...) end
+            local method = getnamecallmethod()
+            if method ~= "FireServer" then return dispatch(self, ...) end
+            if IsAcRemote(self) then return dispatch(self, ...) end
+            if not A.fireRemote then FindFireRemote() end
+            if self ~= A.fireRemote then
+                if IsFireShaped(self, ...) then
+                    A.fireRemote = self
+                else
+                    return dispatch(self, ...)
+                end
+            end
+            if checkcaller and checkcaller() then return dispatch(self, ...) end
+            local seqArg = select(6, ...)
+            if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
+            A.lastFire = tick()
+            if not C.silentEnabled then return dispatch(self, ...) end
+            inHook = true
+            local res = table.pack(pcall(handleFire, self, ...))
+            inHook = false
+            if res[1] and res[2] then return table.unpack(res, 3, res.n) end
+            if dispatched then return end
+            return dispatch(self, ...)
         end
         local hookFn
         hookFn = ncc(function(self, ...)
@@ -880,29 +951,9 @@ local function InstallHooks()
                 end)
                 if f then A.oldNamecall = f else return end
             end
-            if A.unloaded then return A.oldNamecall(self, ...) end
-            if inHook then return A.oldNamecall(self, ...) end
             dispatched = false
-            local method = getnamecallmethod()
-            if method ~= "FireServer" then return A.oldNamecall(self, ...) end
-            if IsAcRemote(self) then return A.oldNamecall(self, ...) end
-            if not A.fireRemote then FindFireRemote() end
-            if self ~= A.fireRemote then
-                if IsFireShaped(self, ...) then
-                    A.fireRemote = self
-                else
-                    return A.oldNamecall(self, ...)
-                end
-            end
-            if checkcaller and checkcaller() then return A.oldNamecall(self, ...) end
-            local seqArg = select(6, ...)
-            if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
-            A.lastFire = tick()
-            if not C.silentEnabled then return A.oldNamecall(self, ...) end
-            inHook = true
-            local res = table.pack(pcall(handleFire, self, ...))
-            inHook = false
-            if res[1] and res[2] then return table.unpack(res, 3, res.n) end
+            local res = table.pack(pcall(hookCore, self, ...))
+            if res[1] then return table.unpack(res, 2, res.n) end
             if dispatched then return end
             return A.oldNamecall(self, ...)
         end)
@@ -1819,7 +1870,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.2", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.3", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -2211,4 +2262,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v9.2 loaded.")
+print("[AERO] v9.3 loaded.")
