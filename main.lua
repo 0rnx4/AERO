@@ -124,7 +124,7 @@ local C = {
     optSliderTier = 0, optAuto = false,
     optQuality = true, optLighting = true, optPost = true, optMaterial = true,
     optTerrain = true, optEffects = true, optShadow = true, optAvatar = true, optFpsCap = true,
-    autoExecute = true, flyEnabled = false, flySpeed = 50,
+    autoExecute = true,
 }
 local CDEF = {}
 for k, v in pairs(C) do CDEF[k] = v end
@@ -223,7 +223,7 @@ local function LoadConfig()
         local numClamp = {
             fovValue = {70, 120}, silentHitChance = {1, 100},
             triggerDelay = {0, 300}, triggerRadius = {1, 60}, triggerInterval = {50, 300},
-            flySpeed = {10, 300}, silentFOV = {40, 600}, silentPredictScale = {0, 200},
+            silentFOV = {40, 600}, silentPredictScale = {0, 200},
             espRenderDist = {100, 2000}, fovStretch = {50, 200}, optSliderTier = {0, 4},
         }
         for k, v in pairs(data) do
@@ -1329,26 +1329,6 @@ end
 local fovCircle = NewDraw("Circle", {Visible = false, Filled = false, Thickness = 1, Transparency = 1, NumSides = 48, Radius = 150, Color = Color3.fromRGB(255, 255, 255), ZIndex = 5})
 local hudText = NewDraw("Text", {Visible = false, Outline = true, Size = 13, Transparency = 1, Color = Color3.fromRGB(255, 255, 255), ZIndex = 5})
 A.fovCircle = fovCircle A.hudText = hudText
-local function FlyStep()
-    local on = C.flyEnabled == true
-    if A.flyPad then A.flyPad.Visible = on end
-    if not on then return end
-    local char = LP and LP.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hum or not hrp or hum.Health <= 0 then return end
-    local vy = A.flyPadY or 0
-    pcall(function()
-        if UIS:IsKeyDown(Enum.KeyCode.Space) then vy = vy + 1 end
-        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then vy = vy - 1 end
-    end)
-    vy = clampNum(vy, -1, 1)
-    local md = nil
-    pcall(function() md = hum.MoveDirection end)
-    if not md then md = Vector3.new() end
-    local speed = C.flySpeed or 50
-    pcall(function() hrp.AssemblyLinearVelocity = Vector3.new(md.X * speed, vy * speed, md.Z * speed) end)
-end
 local function HudStep()
     local cam = A.cam
     if fovCircle and cam then
@@ -1480,40 +1460,7 @@ local function BuildUI()
     local openBtn = mk("TextButton", {Name = "OpenBtn", Size = UDim2.fromOffset(46, 46), Position = UDim2.new(1, -58, 0.5, -23), BackgroundColor3 = COL.panel2, Text = "A", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 17, AutoButtonColor = false, Active = true}, gui)
     addCorner(openBtn, 23)
     addStroke(openBtn, COL.line, 1)
-    local flyPad = mk("TextButton", {Name = "FlyPad", Size = UDim2.fromOffset(72, 72), Position = UDim2.new(1, -190, 0.52, -36), BackgroundColor3 = COL.panel2, BackgroundTransparency = 0.25, Text = "", AutoButtonColor = false, Active = true, Visible = false}, gui)
-    addCorner(flyPad, 36)
-    addStroke(flyPad, COL.line, 1)
-    local flyNub = mk("Frame", {Name = "FlyNub", Size = UDim2.fromOffset(30, 30), Position = UDim2.new(0.5, -15, 0.5, -15), BackgroundColor3 = COL.text, BackgroundTransparency = 0.15, Active = false}, flyPad)
-    addCorner(flyNub, 15)
-    A.flyPad = flyPad
-    local flyPadInput, flyPadStartY = nil, 0
-    onGui(flyPad, "InputBegan", function(input)
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            flyPadInput = input
-            flyPadStartY = input.Position.Y
-            A.flyPadY = 0
-            flyPad.BackgroundTransparency = 0.1
-        end
-    end)
-    onGui(flyPad, "InputEnded", function(input)
-        if input == flyPadInput then
-            flyPadInput = nil
-            A.flyPadY = 0
-            flyPad.BackgroundTransparency = 0.25
-            flyNub.Position = UDim2.new(0.5, -15, 0.5, -15)
-        end
-    end)
-    pcall(function()
-        guiTrack(UIS.InputChanged:Connect(function(input)
-            if flyPadInput and input == flyPadInput and input.Position then
-                local dy = clampNum((flyPadStartY - input.Position.Y) / 55, -1, 1)
-                if math.abs(dy) < 0.12 then dy = 0 end
-                A.flyPadY = dy
-                flyNub.Position = UDim2.new(0.5, -15, 0.5, -15 - dy * 16)
-            end
-        end))
-    end)
-    A.guiHitRects = {win, openBtn, flyPad}
+    A.guiHitRects = {win, openBtn}
     local tabBar = mk("ScrollingFrame", {Name = "TabBar", Size = UDim2.new(1, 0, 0, 36), Position = UDim2.fromOffset(0, 38), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0, CanvasSize = UDim2.fromOffset(560, 0)}, win)
     mk("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6)}, tabBar)
     mk("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingTop = UDim.new(0, 4)}, tabBar)
@@ -1717,7 +1664,6 @@ local function BuildUI()
     local tSil = NewTab("サイレント")
     local tEsp = NewTab("ESP")
     local tFov = NewTab("視点・FOV")
-    local tMove = NewTab("移動")
     local tOpt = NewTab("軽量化")
     local tSet = NewTab("設定")
     if tabObjs[1] then selectTab(tabObjs[1]) end
@@ -1751,8 +1697,6 @@ local function BuildUI()
     tFov:Slider({Title = "画面ストレッチ (%)", Step = 5, Value = {Min = 50, Max = 200, Default = C.fovStretch}, Callback = function(v) C.fovStretch = v FovStep() SaveSoon() end})
     tFov:Toggle({Title = "ADS中もFOV維持", Default = C.fovKeepADS, Callback = function(v) C.fovKeepADS = v SaveSoon() end})
 
-    tMove:Toggle({Title = "Fly", Desc = "空を飛ぶ。上昇/下降は画面右の▲▼ボタン（PCはSpace/Ctrl）", Default = C.flyEnabled, Callback = function(v) C.flyEnabled = v SaveSoon() end})
-    tMove:Slider({Title = "Fly速度", Step = 5, Value = {Min = 10, Max = 300, Default = C.flySpeed}, Callback = function(v) C.flySpeed = v SaveSoon() end})
     tOpt:Slider({Title = "軽量化の強さ (0=OFF / 4=最大)", Desc = "重い・熱い時ほど上げる。4は一部元に戻せない項目あり", Step = 1, Value = {Min = 0, Max = 4, Default = C.optSliderTier}, Callback = function(v) C.optSliderTier = v OptApplyFromUI() SaveSoon() end})
     tOpt:Toggle({Title = "自動調整 (FPS連動)", Desc = "ONの間はFPSを見て強さを勝手に変える", Default = C.optAuto, Callback = function(v) C.optAuto = v if not v then SetTier(C.optSliderTier, true) end SaveSoon() end})
     tOpt:Toggle({Title = "描画品質低下", Default = C.optQuality, Callback = function(v) C.optQuality = v OptApplyFromUI() SaveSoon() end})
@@ -1836,7 +1780,6 @@ Track(RunService.RenderStepped:Connect(function(dt)
     SafeCall("fov", FovStep)
     SafeCall("silent", RefreshSilentTarget)
     SafeCall("trigger", TriggerStep)
-    SafeCall("fly", FlyStep)
     SafeCall("esp", EspStep)
     SafeCall("optq", ProcessOptQueue)
     SafeCall("hud", HudStep)
