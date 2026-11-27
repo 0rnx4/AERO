@@ -883,17 +883,26 @@ local function InstallHooks()
             dispatched = true
             return A.oldNamecall(self, ...)
         end
+        local function aliveTarget()
+            if not A.silentTarget then return false end
+            local okA, alive = pcall(IsAlive, A.silentTarget)
+            return okA and alive == true
+        end
+        local function resolveGoal()
+            local okG, goal = pcall(SilentGoal)
+            if not okG then return nil end
+            if goal and A.silentTarget and not aliveTarget() then return nil end
+            return goal
+        end
         local function handleFire(self, ...)
             if self ~= A.fireRemote then return false end
             A.silentRollOk = nil
-            if not A.silentPartObj or not A.silentTarget or not IsAlive(A.silentTarget) then RefreshSilentTarget() end
-            local okG, goal = pcall(SilentGoal)
-            if not okG then goal = nil end
+            if not A.silentPartObj or not aliveTarget() then pcall(RefreshSilentTarget) end
+            local goal = resolveGoal()
             local part = A.silentPartObj
             if not goal then
-                RefreshSilentTarget()
-                okG, goal = pcall(SilentGoal)
-                if not okG then goal = nil end
+                pcall(RefreshSilentTarget)
+                goal = resolveGoal()
                 part = A.silentPartObj
                 if not goal and A.silentRollOk ~= false then
                     local _, lpart = LastResortTarget()
@@ -902,7 +911,8 @@ local function InstallHooks()
             end
             if not goal then return false end
             if not part or not part.Parent then return false end
-            if select("#", ...) < 5 then return false end
+            local argc = select("#", ...)
+            if argc < 5 then return false end
             local args = {...}
             local origin = args[2]
             if typeof(origin) ~= "Vector3" or typeof(args[3]) ~= "Vector3" then return false end
@@ -912,7 +922,7 @@ local function InstallHooks()
             args[4] = part
             args[5] = goal
             AfterBend()
-            local r = table.pack(dispatch(self, table.unpack(args)))
+            local r = table.pack(dispatch(self, table.unpack(args, 1, argc)))
             return true, table.unpack(r, 1, r.n)
         end
         local function hookCore(self, ...)
@@ -1870,7 +1880,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.3", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.4", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -2262,4 +2272,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v9.3 loaded.")
+print("[AERO] v9.4 loaded.")
