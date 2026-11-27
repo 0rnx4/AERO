@@ -355,10 +355,20 @@ local function PredictPos(part, entry)
     return part.Position + off + jitter
 end
 
+local function FovRatio()
+    local cam = A.cam
+    if not cam then return 1 end
+    local cur = cam.FieldOfView
+    if not cur or cur <= 5 or cur >= 179 then return 1 end
+    local ref = C.fovEnabled and C.fovValue or (A.learnedBase or cur)
+    if not ref or ref <= 5 or ref >= 179 then return 1 end
+    local r = math.tan(math.rad(ref / 2)) / math.tan(math.rad(cur / 2))
+    if r ~= r then return 1 end
+    if r < 0.5 then r = 0.5 elseif r > 4 then r = 4 end
+    return r
+end
 local function EffFOV(base)
-    local f = base or 150
-    if A.adsActive and A.zoomSmooth and A.zoomSmooth > 0.01 then f = f / A.zoomSmooth end
-    return f
+    return (base or 150) * FovRatio()
 end
 
 local function SelectTarget(partMode, stickyKey)
@@ -693,7 +703,7 @@ local function TriggerStep()
     local sp, on = cam:WorldToViewportPoint(goal)
     if not on then A.triggerStart = nil A.triggerFor = nil return end
     local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-    if (Vector2.new(sp.X, sp.Y) - center).Magnitude > (C.triggerRadius or 14) then
+    if (Vector2.new(sp.X, sp.Y) - center).Magnitude > (C.triggerRadius or 14) * FovRatio() then
         A.triggerStart = nil
         A.triggerFor = nil
         return
@@ -1487,7 +1497,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.9", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.10", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1861,4 +1871,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.9 loaded.")
+print("[AERO] v8.10 loaded.")
