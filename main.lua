@@ -693,10 +693,19 @@ local function InstallHooks()
         return oldNamecall(self, ...)
     end)
     StealthMark(hookFn)
+    local prevNC = nil
+    pcall(function()
+        local mt = getrawmetatable(game)
+        if mt and type(mt.__namecall) == "function" and mt.__namecall ~= hookFn then prevNC = mt.__namecall end
+    end)
     local origHook = hookmetamethod(game, "__namecall", hookFn)
     if type(origHook) == "function" then
         oldNamecall = origHook
         A.oldNamecall = origHook
+        A.hooksOn = true
+    elseif prevNC then
+        oldNamecall = prevNC
+        A.oldNamecall = prevNC
         A.hooksOn = true
     end
 end
@@ -889,7 +898,14 @@ local function EspStep()
     end
     A.espWasOn = true
     local cam = A.cam
-    if not cam or not LP or not LP.Character then return end
+    if not cam or not LP or not LP.Character then
+        if not A.espHidden then
+            A.espHidden = true
+            for _, b in pairs(A.esp) do HideBundle(b) end
+        end
+        return
+    end
+    A.espHidden = false
     local lpChar = LP.Character
     local lpHrp = lpChar and lpChar:FindFirstChild("HumanoidRootPart")
     if not lpHrp then
@@ -1561,7 +1577,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.16", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.17", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1934,9 +1950,7 @@ task.spawn(function()
             end
         end
         if iter % 100 == 0 then
-            if A.disabled["silent"] then A.disabled["silent"] = nil A.errCounts["silent"] = 0 end
-            if A.disabled["cache"] then A.disabled["cache"] = nil A.errCounts["cache"] = 0 end
-            if A.disabled["fov"] then A.disabled["fov"] = nil A.errCounts["fov"] = 0 end
+            for dn in pairs(A.disabled) do A.disabled[dn] = nil A.errCounts[dn] = 0 end
             if A.pingOkAt and (tick() - A.pingOkAt) > 5 and A.ping == A.ping then A.ping = LerpNum(A.ping, 0.08, 0.2) end
         end
     end
@@ -1954,4 +1968,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.16 loaded.")
+print("[AERO] v8.17 loaded.")
