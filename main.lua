@@ -332,7 +332,7 @@ local function PredictPos(part, entry)
     local ping = A.ping or 0.05
     if ping ~= ping or ping < 0 then ping = 0.08 end
     if ping > 0.13 then ping = 0.13 end
-    local t = ping
+    local t = ping + (A.dt or 0) * 0.5
     local vel = entry.vel or Vector3.new()
     local off = vel * t
     local acc = entry.accel
@@ -391,6 +391,22 @@ local function SelectTarget(partMode, stickyKey)
     if sticky and stickyD and stickyD <= fov * 1.25 and (not best or best == sticky or stickyD < bestD * 1.8) then
         return sticky, stickyPart
     end
+    if best and bestPart and not VisCached(best, bestPart, best.Character) then
+        for _, p in ipairs(A.players or Players:GetPlayers()) do
+            if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p.Character) then
+                local part2 = ResolvePart(p, partMode)
+                if part2 then
+                    local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
+                    if on2 and sp2.Z > 0 then
+                        local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
+                        if d2 <= fov and d2 <= bestD * 1.5 and VisCached(p, part2, p.Character) then
+                            return p, part2
+                        end
+                    end
+                end
+            end
+        end
+    end
     return best, bestPart
 end
 
@@ -429,7 +445,7 @@ local function CacheStep(dt)
                         local okA, blended = pcall(function()
                             local a = hrp.AssemblyLinearVelocity
                             if a and raw.Magnitude > 3 and a.Magnitude > 3 and a.Magnitude < 400 and a:Dot(raw) > 0 then
-                                return raw:Lerp(a, 0.5)
+                                return raw:Lerp(a, 0.65)
                             end
                             return nil
                         end)
@@ -1265,7 +1281,9 @@ local function BuildQueue()
 end
 local function ProcessOptQueue()
     if A.optTier <= 0 then return end
-    local deadline = tick() + 0.004
+    local budget = 0.004
+    if A.fpsEMA < 45 then budget = 0.002 elseif A.fpsEMA > 100 then budget = 0.007 end
+    local deadline = tick() + budget
     while #A.optQueue > 0 do
         local inst = table.remove(A.optQueue)
         A.optQSeen[inst] = nil
@@ -1469,7 +1487,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.8", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.9", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1784,6 +1802,7 @@ GST.__aero_unload = Unload
 Track(RunService.RenderStepped:Connect(function(dt)
     if A.unloaded then return end
     if dt <= 0 or dt > 0.25 then dt = 1 / 60 end
+    A.dt = dt
     A.frame = A.frame + 1
     A.fpsEMA = LerpNum(A.fpsEMA, 1 / dt, 0.05)
     SafeCall("cache", CacheStep, dt)
@@ -1804,16 +1823,11 @@ local function AEROCamStep()
     end
 end
 RunService:BindToRenderStep("AEROCam", Enum.RenderPriority.Last.Value + 100, function() pcall(AEROCamStep) end)
-Track(RunService.Heartbeat:Connect(function()
-    if A.unloaded then return end
-    if A.desiredFOV then
-        local cam = A.cam
-        if cam and math.abs(cam.FieldOfView - A.desiredFOV) > 0.05 then pcall(function() cam.FieldOfView = A.desiredFOV end) end
-    end
-end))
 task.spawn(function()
+    local iter = 0
     while not A.unloaded do
-        task.wait(0.25)
+        task.wait(0.1)
+        iter = iter + 1
         pcall(function()
             local pv = nil
             pcall(function() pv = LP and LP:GetNetworkPing() end)
@@ -1828,10 +1842,10 @@ task.spawn(function()
             end
             if pv then
                 if A.ping ~= A.ping then A.ping = clampNum(pv, 0.01, 0.5)
-                else A.ping = LerpNum(A.ping, clampNum(pv, 0.01, 0.5), 0.4) end
+                else A.ping = LerpNum(A.ping, clampNum(pv, 0.01, 0.5), 0.18) end
             end
         end)
-        SafeCall("adaptive", AdaptiveStep)
+        if iter % 3 == 0 then SafeCall("adaptive", AdaptiveStep) end
     end
 end)
 
@@ -1847,4 +1861,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.8 loaded.")
+print("[AERO] v8.9 loaded.")
