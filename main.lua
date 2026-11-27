@@ -139,7 +139,7 @@ local A = {
     unloaded = false, errCounts = {}, disabled = {},
     visCache = {}, teamMode = nil, protSeen = {},
 }
-A.optSaved = setmetatable({}, {__mode = "k"})
+A.optSaved = {}
 A.cam = Workspace.CurrentCamera
 if A.cam then
     A.origFOV = A.cam.FieldOfView
@@ -326,10 +326,18 @@ local function VisCheckPart(part, char)
     return false
 end
 local function VisCached(p, part, char)
-    local e = A.visCache[p]
-    if e and e.part == part and (A.frame - (e.frame or 0)) <= 1 then return e.ok end
+    local byPart = A.visCache[p]
+    if not byPart then byPart = {} A.visCache[p] = byPart end
+    local e = byPart[part]
+    if e and (A.frame - (e.frame or 0)) <= 1 then return e.ok end
+    if A.visBudgetFrame ~= A.frame then A.visBudgetFrame = A.frame A.visRayLeft = 8 end
+    if (A.visRayLeft or 0) <= 0 then
+        if e then return e.ok end
+        return false
+    end
+    A.visRayLeft = A.visRayLeft - 1
     local ok = VisCheckPart(part, char)
-    A.visCache[p] = {part = part, ok = ok, frame = A.frame}
+    byPart[part] = {ok = ok, frame = A.frame}
     return ok
 end
 
@@ -364,11 +372,11 @@ local function PredictPos(part, entry)
     local predScale = C.silentPredictScale or 100
     off = off * (predScale / 100)
     if off.Magnitude > 6 then off = off.Unit * 6 end
-    local jitter = Vector3.new(
-        (math.random() - 0.5) * 2,
-        (math.random() - 0.5) * 2,
-        (math.random() - 0.5) * 2
-    ) * 0.15
+    if A.jitterFrame ~= A.frame then
+        A.jitterFrame = A.frame
+        A.jitterVec = Vector3.new((math.random() - 0.5) * 2, (math.random() - 0.5) * 2, (math.random() - 0.5) * 2) * 0.15
+    end
+    local jitter = A.jitterVec or Vector3.new()
     local g = part.Position + off + jitter
     if g.X ~= g.X or g.Y ~= g.Y or g.Z ~= g.Z then return part.Position end
     return g
@@ -421,6 +429,7 @@ local function SelectTarget(partMode, stickyKey)
         return sticky, stickyPart
     end
     if best and bestPart and not VisCached(best, bestPart, best.Character) then
+        local subP, subPart, subD = nil, nil, math.huge
         for _, p in ipairs(A.players or Players:GetPlayers()) do
             if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
                 local part2 = ResolvePart(p, partMode)
@@ -428,13 +437,14 @@ local function SelectTarget(partMode, stickyKey)
                     local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
                     if on2 and sp2.Z > 0 then
                         local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
-                        if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and VisCached(p, part2, p.Character) then
-                            return p, part2
+                        if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and d2 < subD and VisCached(p, part2, p.Character) then
+                            subP = p subPart = part2 subD = d2
                         end
                     end
                 end
             end
         end
+        if subP then return subP, subPart end
     end
     return best, bestPart
 end
@@ -450,6 +460,7 @@ local function CacheStep(dt)
             local char = p.Character
             if char ~= e.char then
                 e.char = char
+                A.visCache[p] = nil
                 e.vel = Vector3.new()
                 e.accel = Vector3.new()
                 e.prevPos = nil
@@ -584,12 +595,31 @@ local function FindFireRemote()
         if found and not found:IsA("RemoteEvent") then found = nil end
     end)
     if found then
-        A.fireRemote = found
+        if A.fireRemote ~= found then A.fireRemote = found A.fireSeen = false end
         return found
     end
     if A.fireRemote and A.fireRemote.Parent then return A.fireRemote end
-    A.fireRemote = nil
-    return nil
+    local nowS = tick()
+    if not A.lastRemoteScan or (nowS - A.lastRemoteScan) >= 2 then
+        A.lastRemoteScan = nowS
+        local best = nil
+        pcall(function()
+            local rs = game:GetService("ReplicatedStorage")
+            if rs then
+                for _, d in ipairs(rs:GetDescendants()) do
+                    local okI, isRE = pcall(function() return d:IsA("RemoteEvent") end)
+                    if okI and isRE and d.Name == "Fire" then
+                        local par = d.Parent
+                        local pn = par and par.Name and par.Name:lower() or ""
+                        if pn:find("kinetic", 1, true) or pn:find("weapon", 1, true) then best = d break end
+                        if not best then best = d end
+                    end
+                end
+            end
+        end)
+        if best and A.fireRemote ~= best then A.fireRemote = best A.fireSeen = false end
+    end
+    return A.fireRemote
 end
 local function RefreshSilentTarget()
     if not C.silentEnabled then
@@ -634,6 +664,27 @@ local function IsAcRemote(remote)
     return false
 end
 
+local function IsFireShaped(remote, ...)
+    local okA, isRE = pcall(function() return remote:IsA("RemoteEvent") end)
+    if not okA or not isRE then return false end
+    local nm = remote.Name
+    local shaped = (nm == "Fire")
+    if not shaped then
+        local par = remote.Parent
+        local pn = par and par.Name and par.Name:lower() or ""
+        if pn:find("kinetic", 1, true) or pn:find("weapon", 1, true) then shaped = true end
+    end
+    if not shaped then return false end
+    if select("#", ...) < 6 then return false end
+    local a1, a2, a3, a4, a5, a6 = ...
+    if not (type(a1) == "string" or typeof(a1) == "Instance") then return false end
+    if typeof(a2) ~= "Vector3" or typeof(a3) ~= "Vector3" then return false end
+    if not (typeof(a4) == "Instance" or a4 == nil) then return false end
+    if typeof(a5) ~= "Vector3" then return false end
+    if type(a6) ~= "number" then return false end
+    return true
+end
+
 local function RestoreNamecallHook()
     local prev = A.oldNamecall
     if not prev then return true end
@@ -650,9 +701,22 @@ local function InstallHooks()
     local dispatched = false
     local function handleFire(self, ...)
         if self ~= A.fireRemote then return false end
+        local argc = select("#", ...)
+        if argc < 5 then return false end
+        local a1 = select(1, ...)
+        if not (type(a1) == "string" or typeof(a1) == "Instance") then return false end
+        if typeof(select(5, ...)) ~= "Vector3" then return false end
+        if argc >= 6 and type(select(6, ...)) ~= "number" then return false end
         A.silentRollOk = nil
         if not A.silentPartObj then RefreshSilentTarget() end
         local goal = SilentGoal()
+        if goal and A.silentTarget then
+            local okA, alive = pcall(IsAlive, A.silentTarget)
+            if okA and not alive then
+                RefreshSilentTarget()
+                goal = SilentGoal()
+            end
+        end
         if not goal then return false end
         local part = A.silentPartObj
         if not part or not part.Parent then return false end
@@ -670,16 +734,23 @@ local function InstallHooks()
         return true, oldNamecall(self, table.unpack(args))
     end
     local hookFn
-    hookFn = ncc(function(self, ...)
-        if not oldNamecall then return end
+    local function hookCore(self, ...)
         if A.unloaded then return oldNamecall(self, ...) end
         if inHook then return oldNamecall(self, ...) end
-        dispatched = false
         local method = getnamecallmethod()
         if method ~= "FireServer" then return oldNamecall(self, ...) end
         if IsAcRemote(self) then return oldNamecall(self, ...) end
         if not A.fireRemote then FindFireRemote() end
-        if self ~= A.fireRemote then return oldNamecall(self, ...) end
+        if self ~= A.fireRemote then
+            if IsFireShaped(self, ...) and not A.fireSeen then
+                A.fireRemote = self
+                A.fireSeen = true
+            else
+                return oldNamecall(self, ...)
+            end
+        else
+            A.fireSeen = true
+        end
         if checkcaller and checkcaller() then return oldNamecall(self, ...) end
         local seqArg = select(6, ...)
         if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
@@ -689,6 +760,18 @@ local function InstallHooks()
         local res = {pcall(handleFire, self, ...)}
         inHook = false
         if res[1] and res[2] then return res[3], res[4], res[5], res[6], res[7], res[8], res[9], res[10] end
+        if dispatched then return end
+        return oldNamecall(self, ...)
+    end
+    hookFn = ncc(function(self, ...)
+        if not oldNamecall then
+            local f = A.lastKnownNC
+            if type(f) == "function" and f ~= hookFn then oldNamecall = f A.oldNamecall = f
+            else return end
+        end
+        dispatched = false
+        local res = table.pack(pcall(hookCore, self, ...))
+        if res[1] then return table.unpack(res, 2, res.n) end
         if dispatched then return end
         return oldNamecall(self, ...)
     end)
@@ -702,10 +785,12 @@ local function InstallHooks()
     if type(origHook) == "function" then
         oldNamecall = origHook
         A.oldNamecall = origHook
+        A.lastKnownNC = origHook
         A.hooksOn = true
     elseif prevNC then
         oldNamecall = prevNC
         A.oldNamecall = prevNC
+        A.lastKnownNC = prevNC
         A.hooksOn = true
     end
 end
@@ -714,8 +799,17 @@ local function SyncSilentHooks()
     if C.silentEnabled or C.triggerEnabled then
         if A.hooksOn then return end
         if not (hookmetamethod and getnamecallmethod) then return end
+        local nowT = tick()
+        if A.hookRetryAt and nowT < A.hookRetryAt then return end
         local okI = pcall(InstallHooks)
-        if okI and A.oldNamecall then A.hooksOn = true end
+        if okI and A.oldNamecall then
+            A.hooksOn = true
+            A.hookFails = 0
+            A.hookRetryAt = nil
+        else
+            A.hookFails = (A.hookFails or 0) + 1
+            A.hookRetryAt = nowT + math.min(0.25 * (2 ^ math.min(A.hookFails - 1, 4)), 4)
+        end
     else
         if not A.hooksOn and not A.oldNamecall then return end
         A.hooksOn = false
@@ -763,7 +857,6 @@ local function TriggerStep()
     if not cam then return end
     local goal = nil
     if plr and plr == A.silentTarget then goal = SilentGoal() end
-    if plr and plr == A.silentTarget and A.silentRollOk == false then A.triggerStart = nil return end
     if not goal then goal = PredictPos(part, plr and A.cache[plr]) end
     local sp, on = cam:WorldToViewportPoint(goal)
     if not on then A.triggerStart = nil A.triggerFor = nil return end
@@ -777,6 +870,12 @@ local function TriggerStep()
     if not A.triggerStart then A.triggerStart = tick() end
     if (tick() - A.triggerStart) * 1000 >= (C.triggerDelay or 60) then
         A.triggerStart = tick()
+        if plr and plr == A.silentTarget then
+            A.silentRollOk = nil
+            local g2 = SilentGoal()
+            if not g2 then return end
+            goal = g2
+        end
         local function fireViaTool()
             local lchar = LP and LP.Character
             local tool = lchar and lchar:FindFirstChildOfClass("Tool")
@@ -853,14 +952,17 @@ local function ProjectBox(char)
     }
     local minX, minY, maxX, maxY = 1e9, 1e9, -1e9, -1e9
     local any = false
+    local vp = cam.ViewportSize
     for _, w in ipairs(corners) do
-        local sp, on = cam:WorldToViewportPoint(w)
-        if on then
+        local sp = cam:WorldToViewportPoint(w)
+        if sp.Z > 0 then
             any = true
-            if sp.X < minX then minX = sp.X end
-            if sp.Y < minY then minY = sp.Y end
-            if sp.X > maxX then maxX = sp.X end
-            if sp.Y > maxY then maxY = sp.Y end
+            local cx = clampNum(sp.X, -2000, vp.X + 2000)
+            local cy = clampNum(sp.Y, -2000, vp.Y + 2000)
+            if cx < minX then minX = cx end
+            if cy < minY then minY = cy end
+            if cx > maxX then maxX = cx end
+            if cy > maxY then maxY = cy end
         end
     end
     if not any then return nil end
@@ -932,12 +1034,21 @@ local function EspStep()
                     if skipN > 1 and (A.frame + (b.phase or 0)) % skipN ~= 0 then
                         minX = false
                     else
+                        if b.char ~= char then b.char = char b.aspect = nil b.sx = nil end
                         local nowC = os.clock()
-                        if not b.aspect or nowC - (b.learnAt or 0) > 1 then
+                        if not b.aspect or nowC - (b.learnAt or 0) > 0.35 then
                             b.learnAt = nowC
                             local szS
                             minX, minY, maxX, maxY, szS = ProjectBox(char)
-                            if szS then b.hw = szS.X / 2 b.hh = szS.Y / 2 b.aspect = szS.X / math.max(szS.Y, 0.1) end
+                            if szS then
+                                local nhw, nhh = szS.X / 2, szS.Y / 2
+                                local nasp = szS.X / math.max(szS.Y, 0.1)
+                                if b.aspect then
+                                    b.hw = LerpNum(b.hw, nhw, 0.5) b.hh = LerpNum(b.hh, nhh, 0.5) b.aspect = LerpNum(b.aspect, nasp, 0.5)
+                                else
+                                    b.hw = nhw b.hh = nhh b.aspect = nasp
+                                end
+                            end
                         end
                         if not minX and b.hh then
                             local spF, onF = cam:WorldToViewportPoint(hrp.Position)
@@ -1200,16 +1311,16 @@ local function SaveProp(inst, prop)
     if not rec then rec = {} A.optSaved[inst] = rec end
     if rec[prop] == nil then
         local ok, v = pcall(function() return inst[prop] end)
-        if ok then rec[prop] = v else rec[prop] = false end
+        if ok then rec[prop] = {v = v} end
     end
 end
 local function RestoreAllProps()
     for inst, rec in pairs(A.optSaved) do
-        for prop, v in pairs(rec) do
-            if v ~= false then pcall(function() inst[prop] = v end) end
+        for prop, w in pairs(rec) do
+            if type(w) == "table" then pcall(function() inst[prop] = w.v end) end
         end
     end
-    A.optSaved = setmetatable({}, {__mode = "k"})
+    A.optSaved = {}
 end
 local function SaveScalars()
     if A.scalarsSaved then return end
@@ -1449,7 +1560,20 @@ local function HudStep()
         if C.silentShowFOV and C.silentEnabled then
             fovCircle.Position = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
             fovCircle.Radius = EffFOV(C.silentFOV)
-            fovCircle.Color = A.silentTarget and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(255, 255, 255)
+            local fcol = Color3.fromRGB(255, 255, 255)
+            if not A.hooksOn then
+                fcol = Color3.fromRGB(120, 120, 120)
+            elseif A.silentTarget then
+                fcol = Color3.fromRGB(255, 80, 80)
+                local tp = A.silentPartObj
+                if tp and tp.Parent then
+                    local sp2 = cam:WorldToViewportPoint(tp.Position)
+                    if sp2.Z > 0 and (Vector2.new(sp2.X, sp2.Y) - fovCircle.Position).Magnitude > fovCircle.Radius then
+                        fcol = Color3.fromRGB(255, 170, 60)
+                    end
+                end
+            end
+            fovCircle.Color = fcol
             fovCircle.Visible = true
         else
             fovCircle.Visible = false
@@ -1577,7 +1701,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.17", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.6", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1783,6 +1907,12 @@ local function BuildUI()
             titleLabels(row, spec, 20)
             return row
         end
+        for _, mn in ipairs({"Toggle", "Slider", "Dropdown", "Button", "Paragraph"}) do
+            local origM = t[mn]
+            if type(origM) == "function" then
+                t[mn] = function(self, spec) local okM, rM = pcall(origM, self, spec) if okM then return rM end return nil end
+            end
+        end
         return t
     end
     local tSil = NewTab("サイレント")
@@ -1968,4 +2098,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.17 loaded.")
+print("[AERO] v9.6 loaded.")
