@@ -6,7 +6,7 @@ end
 local GEN = getgenv()
 if GEN.__aero_loading then print("[AERO] loader already running") return end
 GEN.__aero_loading = true
-local PIN = "65cfb062b387cab3b48dba1b1803d494651f5058"
+local PIN = "ceb460cf67040bce9c72fe8ad9b3c33ac618692f"
 local HOSTS = {
     "https://raw.githubusercontent.com/0rnx4/AERO/" .. PIN .. "/modules/",
     "https://cdn.jsdelivr.net/gh/0rnx4/AERO@" .. PIN .. "/modules/",
@@ -17,11 +17,11 @@ local MANIFEST = {
     {name = "draw.lua", size = 1262, hash = 2606187962},
     {name = "target.lua", size = 14805, hash = 2713281304},
     {name = "input.lua", size = 1719, hash = 128004215},
-    {name = "silent.lua", size = 13131, hash = 1297525499},
+    {name = "silent.lua", size = 13890, hash = 3054454401},
     {name = "esp_draw.lua", size = 2715, hash = 3264100244},
     {name = "esp.lua", size = 15890, hash = 3038769585},
     {name = "fov_opt.lua", size = 15154, hash = 3035434835},
-    {name = "main.lua", size = 32515, hash = 1448210213},
+    {name = "main.lua", size = 32692, hash = 452768220},
 }
 local function notify(text, dur)
     pcall(function()
