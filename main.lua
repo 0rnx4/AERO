@@ -137,7 +137,7 @@ local A = {
     optTier = 0, optAppliedTier = -1, optSaved = {}, optQueue = {}, optQSeen = {},
     fpsCapOrigin = nil, origFOV = nil, origMaxZoom = nil, origMinZoom = nil,
     unloaded = false, errCounts = {}, disabled = {},
-    visCache = {}, teamMode = nil,
+    visCache = {}, teamMode = nil, protSeen = {},
 }
 A.optSaved = setmetatable({}, {__mode = "k"})
 A.cam = Workspace.CurrentCamera
@@ -261,10 +261,22 @@ local function RefreshTeamMode()
     if distinct then A.teamMode = "team" return end
     A.teamMode = "ffa"
 end
-local function IsProtected(char)
-    if not char then return false end
-    if char:FindFirstChildOfClass("ForceField") then return true end
-    if char:FindFirstChild("SpawnProtection") then return true end
+local function IsProtected(p)
+    local char = p and p.Character
+    if not char then
+        if p then A.protSeen[p] = nil end
+        return false
+    end
+    if char:FindFirstChildOfClass("ForceField") or char:FindFirstChild("SpawnProtection") then
+        local ps = A.protSeen[p]
+        if not ps or ps.char ~= char then
+            A.protSeen[p] = {char = char, at = tick()}
+            return true
+        end
+        if tick() - ps.at <= 10 then return true end
+    else
+        A.protSeen[p] = nil
+    end
     local pu = nil
     pcall(function() pu = char:GetAttribute("ProtectedUntil") end)
     if type(pu) == "number" and pu == pu then
@@ -388,7 +400,7 @@ local function SelectTarget(partMode, stickyKey)
     local lockedP = stickyKey and A[stickyKey] or nil
     for _, p in ipairs(A.players or Players:GetPlayers()) do
         if IsEnemy(p, C.teamCheck) and IsAlive(p) then
-            if not IsProtected(p.Character) then
+            if not IsProtected(p) then
                 local part = ResolvePart(p, partMode)
                 if part and part.Parent then
                     local entry = A.cache[p]
@@ -410,7 +422,7 @@ local function SelectTarget(partMode, stickyKey)
     end
     if best and bestPart and not VisCached(best, bestPart, best.Character) then
         for _, p in ipairs(A.players or Players:GetPlayers()) do
-            if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p.Character) then
+            if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
                 local part2 = ResolvePart(p, partMode)
                 if part2 and part2.Parent then
                     local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
@@ -1451,6 +1463,7 @@ Track(Players.PlayerRemoving:Connect(function(p)
     RemoveBundle(p)
     A.cache[p] = nil
     A.visCache[p] = nil
+    A.protSeen[p] = nil
     if A.triggerTarget == p then A.triggerTarget = nil end
     if A.silentTarget == p then A.silentTarget = nil A.silentPartObj = nil end
     RefreshTeamMode()
@@ -1541,7 +1554,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.14", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.15", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1855,6 +1868,8 @@ GST.__aero_unload = Unload
 
 Track(RunService.RenderStepped:Connect(function(dt)
     if A.unloaded then return end
+    local wcam = Workspace.CurrentCamera
+    if wcam and wcam ~= A.cam then A.cam = wcam end
     local rawDt = dt
     if rawDt <= 0 then rawDt = 1 / 60 end
     if dt <= 0 or dt > 0.25 then dt = 1 / 60 end
@@ -1907,6 +1922,7 @@ task.spawn(function()
         if iter % 100 == 0 then
             if A.disabled["silent"] then A.disabled["silent"] = nil A.errCounts["silent"] = 0 end
             if A.disabled["cache"] then A.disabled["cache"] = nil A.errCounts["cache"] = 0 end
+            if A.disabled["fov"] then A.disabled["fov"] = nil A.errCounts["fov"] = 0 end
             if A.pingOkAt and (tick() - A.pingOkAt) > 5 and A.ping == A.ping then A.ping = LerpNum(A.ping, 0.08, 0.2) end
         end
     end
@@ -1924,4 +1940,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.14 loaded.")
+print("[AERO] v8.15 loaded.")
