@@ -269,7 +269,7 @@ local function IsProtected(char)
     pcall(function() pu = char:GetAttribute("ProtectedUntil") end)
     if type(pu) == "number" and pu == pu then
         local dt = pu - tick()
-        if dt > 0 and dt <= 20 then return true end
+        if dt > 0 and dt <= 300 then return true end
     end
     return false
 end
@@ -279,6 +279,7 @@ local function IsEnemy(p, useTeamCheck)
     if A.teamAttrMode then
         local lt, pt = LP:GetAttribute("Team"), p:GetAttribute("Team")
         if lt ~= nil and pt ~= nil then return lt ~= pt end
+        return true
     end
     if A.teamMode == nil then RefreshTeamMode() end
     if A.teamMode == "team" then
@@ -356,7 +357,9 @@ local function PredictPos(part, entry)
         (math.random() - 0.5) * 2,
         (math.random() - 0.5) * 2
     ) * 0.15
-    return part.Position + off + jitter
+    local g = part.Position + off + jitter
+    if g.X ~= g.X or g.Y ~= g.Y or g.Z ~= g.Z then return part.Position end
+    return g
 end
 
 local function FovRatio()
@@ -413,7 +416,7 @@ local function SelectTarget(partMode, stickyKey)
                     local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
                     if on2 and sp2.Z > 0 then
                         local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
-                        if d2 <= fov and d2 <= bestD * 1.5 and VisCached(p, part2, p.Character) then
+                        if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and VisCached(p, part2, p.Character) then
                             return p, part2
                         end
                     end
@@ -451,13 +454,22 @@ local function CacheStep(dt)
             local hrp = e.hrp
             if hrp then
                 local pos = hrp.Position
+                if e.vel.X ~= e.vel.X or e.vel.Y ~= e.vel.Y or e.vel.Z ~= e.vel.Z then e.vel = Vector3.new() e.accel = Vector3.new() end
                 if e.prevPos then
                     local delta = pos - e.prevPos
-                    if delta.Magnitude > 8 then
+                    local rawPre = delta / dt
+                    local nanDelta = rawPre.X ~= rawPre.X or rawPre.Y ~= rawPre.Y or rawPre.Z ~= rawPre.Z
+                    local phantom = false
+                    if not nanDelta and rawPre.Magnitude > 160 then
+                        local av = nil
+                        pcall(function() av = hrp.AssemblyLinearVelocity end)
+                        phantom = not (av and av.Magnitude > 80 and av:Dot(rawPre) > 0)
+                    end
+                    if delta.Magnitude > 8 or nanDelta or phantom then
                         e.vel = Vector3.new()
                         e.accel = Vector3.new()
                     else
-                        local raw = delta / dt
+                        local raw = rawPre
                         if raw.Magnitude > 400 then raw = Vector3.new() end
                         local okA, blended = pcall(function()
                             local a = hrp.AssemblyLinearVelocity
@@ -557,6 +569,7 @@ local function FindFireRemote()
         local rs = game:GetService("ReplicatedStorage")
         local kin = rs and rs:FindFirstChild("Kinetic")
         found = kin and kin:FindFirstChild("Fire")
+        if found and not found:IsA("RemoteEvent") then found = nil end
     end)
     if found then
         A.fireRemote = found
@@ -581,9 +594,9 @@ end
 local function SilentGoal()
     local part = A.silentPartObj
     if not part or not part.Parent then return nil end
-    if A.silentGoalFrame == A.frame and A.silentGoalFor == part then return A.silentGoalCache end
     if A.silentRollOk == nil then A.silentRollOk = (math.random(1, 100) <= (C.silentHitChance or 100)) end
     if not A.silentRollOk then return nil end
+    if A.silentGoalFrame == A.frame and A.silentGoalFor == part then return A.silentGoalCache end
     local p = A.silentTarget
     local g = PredictPos(part, p and A.cache[p])
     A.silentGoalFrame = A.frame A.silentGoalFor = part A.silentGoalCache = g
@@ -609,16 +622,20 @@ local function IsAcRemote(remote)
     return false
 end
 
+local function RestoreNamecallHook()
+    local prev = A.oldNamecall
+    if not prev then return true end
+    local okR = pcall(function() hookmetamethod(game, "__namecall", prev) end)
+    if okR then A.oldNamecall = nil end
+    return okR
+end
 local function InstallHooks()
-    if A.oldNamecall then
-        local prev = A.oldNamecall
-        A.oldNamecall = nil
-        A.hooksOn = false
-        pcall(function() hookmetamethod(game, "__namecall", prev) end)
-    end
+    RestoreNamecallHook()
+    A.hooksOn = false
     local ncc = newcclosure or function(f) return f end
     local inHook = false
     local oldNamecall
+    local dispatched = false
     local function handleFire(self, ...)
         if self ~= A.fireRemote then return false end
         A.silentRollOk = nil
@@ -637,11 +654,15 @@ local function InstallHooks()
         args[4] = part
         args[5] = goal
         AfterBend()
+        dispatched = true
         return true, oldNamecall(self, table.unpack(args))
     end
     local hookFn
     hookFn = ncc(function(self, ...)
+        if not oldNamecall then return end
+        if A.unloaded then return oldNamecall(self, ...) end
         if inHook then return oldNamecall(self, ...) end
+        dispatched = false
         local method = getnamecallmethod()
         if method ~= "FireServer" then return oldNamecall(self, ...) end
         if IsAcRemote(self) then return oldNamecall(self, ...) end
@@ -656,12 +677,16 @@ local function InstallHooks()
         local res = {pcall(handleFire, self, ...)}
         inHook = false
         if res[1] and res[2] then return res[3], res[4], res[5], res[6], res[7], res[8], res[9], res[10] end
+        if dispatched then return end
         return oldNamecall(self, ...)
     end)
     StealthMark(hookFn)
-    oldNamecall = hookmetamethod(game, "__namecall", hookFn)
-    A.oldNamecall = oldNamecall
-    A.hooksOn = true
+    local origHook = hookmetamethod(game, "__namecall", hookFn)
+    if type(origHook) == "function" then
+        oldNamecall = origHook
+        A.oldNamecall = origHook
+        A.hooksOn = true
+    end
 end
 
 local function SyncSilentHooks()
@@ -673,7 +698,7 @@ local function SyncSilentHooks()
     else
         if not A.hooksOn and not A.oldNamecall then return end
         A.hooksOn = false
-        if A.oldNamecall then pcall(function() hookmetamethod(game, "__namecall", A.oldNamecall) end) A.oldNamecall = nil end
+        RestoreNamecallHook()
     end
 end
 A.syncSilentHooks = SyncSilentHooks
@@ -717,6 +742,7 @@ local function TriggerStep()
     if not cam then return end
     local goal = nil
     if plr and plr == A.silentTarget then goal = SilentGoal() end
+    if plr and plr == A.silentTarget and A.silentRollOk == false then A.triggerStart = nil return end
     if not goal then goal = PredictPos(part, plr and A.cache[plr]) end
     local sp, on = cam:WorldToViewportPoint(goal)
     if not on then A.triggerStart = nil A.triggerFor = nil return end
@@ -1068,7 +1094,7 @@ local function FovStep()
     end
     if not cam then return end
     local cur = cam.FieldOfView
-    if A.origFOV and A.origFOV >= 60 and not A.learnedBase then A.learnedBase = A.origFOV end
+    if A.origFOV and A.origFOV >= 45 and not A.learnedBase then A.learnedBase = A.origFOV end
     local base = A.learnedBase or C.fovValue
     local inputADS = A.adsBtnHeld == true
     if not inputADS then pcall(function() inputADS = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end) end
@@ -1085,7 +1111,7 @@ local function FovStep()
             A.baseCand = cur
             A.baseStable = 0
         end
-        if cur >= 60 and ((A.baseStable >= 40 and (not A.learnedBase or cur >= A.learnedBase)) or A.baseStable >= 240) then A.learnedBase = cur end
+        if cur >= 45 and ((A.baseStable >= 40 and (not A.learnedBase or cur <= A.learnedBase)) or A.baseStable >= 240) then A.learnedBase = cur end
     end
     if not C.fovEnabled then
         if A.fovApplied then
@@ -1205,7 +1231,7 @@ local function ApplyScalars(tier)
         pcall(function() UserSettings():GetService("UserGameSettings").SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1 end)
         pcall(function() settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01 end)
         if tier >= 2 then pcall(function() Workspace.ClientAnimatorThrottling = Enum.ClientAnimatorThrottlingMode.Enabled end) end
-        if tier >= 2 then pcall(function() Workspace.InterpolationThrottling = Enum.InterpolationThrottlingMode.Enabled end) end
+        if tier >= 2 then pcall(function() Workspace.InterpolationThrottling = C.silentEnabled and ((A.scalarOrig and A.scalarOrig.interpThrottle) or Enum.InterpolationThrottlingMode.Disabled) or Enum.InterpolationThrottlingMode.Enabled end) end
         if tier >= 3 then pcall(function() Workspace.LevelOfDetail = Enum.ModelLevelOfDetail.Performance end) end
         if tier >= 4 then
             pcall(function() Workspace.StreamingTargetRadius = 128 end)
@@ -1515,7 +1541,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.13", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.14", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1730,7 +1756,7 @@ local function BuildUI()
     local tSet = NewTab("設定")
     if tabObjs[1] then selectTab(tabObjs[1]) end
     local function populate()
-    tSil:Toggle({Title = "サイレントエイム有効", Default = C.silentEnabled, Callback = function(v) C.silentEnabled = v pcall(SyncSilentHooks) SaveSoon() end})
+    tSil:Toggle({Title = "サイレントエイム有効", Default = C.silentEnabled, Callback = function(v) C.silentEnabled = v pcall(SyncSilentHooks) if (A.optAppliedTier or 0) >= 2 then pcall(ApplyScalars, A.optAppliedTier) end SaveSoon() end})
     tSil:Dropdown({Title = "狙う部位", Values = {"頭", "胴体"}, Default = C.silentPart, Callback = function(v) C.silentPart = v SaveSoon() end})
     tSil:Slider({Title = "FOV半径(px)", Step = 1, Value = {Min = 40, Max = 600, Default = C.silentFOV}, Callback = function(v) C.silentFOV = v SaveSoon() end})
     tSil:Toggle({Title = "予測", Default = C.silentPrediction, Callback = function(v) C.silentPrediction = v SaveSoon() end})
@@ -1812,7 +1838,7 @@ Unload = function(replacing)
     A.unloaded = true
     if not replacing then GST.__aero_noauto = true end
     A.hooksOn = false
-    if A.oldNamecall then pcall(function() hookmetamethod(game, "__namecall", A.oldNamecall) end) A.oldNamecall = nil end
+    RestoreNamecallHook()
     pcall(function() RunService:UnbindFromRenderStep("AEROCam") end)
     for _, c in ipairs(A.conns) do pcall(function() c:Disconnect() end) end
     A.conns = {}
@@ -1871,12 +1897,18 @@ task.spawn(function()
                 end)
             end
             if pv then
+                A.pingOkAt = tick()
                 if A.ping ~= A.ping then A.ping = clampNum(pv, 0.01, 0.5)
                 else A.ping = LerpNum(A.ping, clampNum(pv, 0.01, 0.5), 0.18) end
             end
         end)
         if iter % 3 == 0 then SafeCall("adaptive", AdaptiveStep) end
         if iter % 10 == 0 and (C.silentEnabled or C.triggerEnabled) and not A.hooksOn then pcall(SyncSilentHooks) end
+        if iter % 100 == 0 then
+            if A.disabled["silent"] then A.disabled["silent"] = nil A.errCounts["silent"] = 0 end
+            if A.disabled["cache"] then A.disabled["cache"] = nil A.errCounts["cache"] = 0 end
+            if A.pingOkAt and (tick() - A.pingOkAt) > 5 and A.ping == A.ping then A.ping = LerpNum(A.ping, 0.08, 0.2) end
+        end
     end
 end)
 
@@ -1892,4 +1924,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.13 loaded.")
+print("[AERO] v8.14 loaded.")
