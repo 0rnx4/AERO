@@ -166,7 +166,8 @@ local function SafeCall(name, fn, ...)
     local ok, err = pcall(fn, ...)
     if ok then A.errCounts[name] = 0 return end
     A.errCounts[name] = (A.errCounts[name] or 0) + 1
-    if A.errCounts[name] == 1 then print("[AERO] " .. name .. ": " .. tostring(err)) end
+    if not A.errPrinted then A.errPrinted = {} end
+    if not A.errPrinted[name] then A.errPrinted[name] = true print("[AERO] " .. name .. ": " .. tostring(err)) end
     if A.errCounts[name] > 60 then
         A.disabled[name] = true
         if name == "esp" and A.hideAllEsp then A.hideAllEsp() end
@@ -287,6 +288,7 @@ end
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 RAY_PARAMS.IgnoreWater = true
+local RAY_FILTER = {nil, nil}
 local function VisCheckPart(part, char)
     local cam = A.cam
     if not cam or not part then return false end
@@ -294,7 +296,8 @@ local function VisCheckPart(part, char)
     local dir = part.Position - origin
     local dist = dir.Magnitude
     if dist < 0.1 then return true end
-    RAY_PARAMS.FilterDescendantsInstances = {LP and LP.Character, A.cam}
+    RAY_FILTER[1] = LP and LP.Character RAY_FILTER[2] = A.cam
+    RAY_PARAMS.FilterDescendantsInstances = RAY_FILTER
     local ok, res = pcall(function() return Workspace:Raycast(origin, dir, RAY_PARAMS) end)
     if not ok then return true end
     if not res then return true end
@@ -661,6 +664,7 @@ local function TriggerStep()
         plr, part = A.silentTarget, A.silentPartObj
     else
         plr, part = SelectTarget(C.silentPart, "triggerTarget")
+        A.triggerTarget = plr
     end
     if not part then A.triggerStart = nil A.triggerFor = nil return end
     local cam = A.cam
@@ -765,7 +769,7 @@ local function ProjectBox(char)
         end
     end
     if not any then return nil end
-    return minX, minY, maxX, maxY
+    return minX, minY, maxX, maxY, size
 end
 local BONES15 = {
     {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
@@ -829,9 +833,9 @@ local function EspStep()
                         local nowC = os.clock()
                         if not b.aspect or nowC - (b.learnAt or 0) > 1 then
                             b.learnAt = nowC
-                            minX, minY, maxX, maxY = ProjectBox(char)
-                            local okS, cfS, szS = pcall(function() return char:GetBoundingBox() end)
-                            if okS and szS then b.hw = szS.X / 2 b.hh = szS.Y / 2 b.aspect = szS.X / math.max(szS.Y, 0.1) end
+                            local szS
+                            minX, minY, maxX, maxY, szS = ProjectBox(char)
+                            if szS then b.hw = szS.X / 2 b.hh = szS.Y / 2 b.aspect = szS.X / math.max(szS.Y, 0.1) end
                         end
                         if not minX and b.hh then
                             local spF, onF = cam:WorldToViewportPoint(hrp.Position)
@@ -886,7 +890,7 @@ local function EspStep()
                         end
                         if b.nameTxt then
                             if C.espNameDist then
-                                b.nameTxt.Text = p.DisplayName
+                                if b._name ~= p.DisplayName then b._name = p.DisplayName b.nameTxt.Text = p.DisplayName end
                                 b.nameTxt.Position = Vector2.new((minX + maxX) / 2, minY - 16)
                                 b.nameTxt.Color = baseCol
                                 b.nameTxt.Visible = true
@@ -903,13 +907,19 @@ local function EspStep()
                             end
                         end
                         local hpNow, hpMax = hum.Health, math.max(hum.MaxHealth, 1)
-                        pcall(function()
-                            local ar = char:GetAttribute("Armor")
-                            local arm = char:GetAttribute("MaxArmor")
-                            if type(ar) == "number" and type(arm) == "number" and arm > 0 then
-                                hpNow = hpNow + ar hpMax = hpMax + arm
-                            end
-                        end)
+                        if b._armorChar ~= char or b._armorFrame == nil or (A.frame - b._armorFrame) >= 30 then
+                            b._armorChar = char
+                            b._armorFrame = A.frame
+                            b._armor = nil b._maxArmor = nil
+                            pcall(function()
+                                local ar = char:GetAttribute("Armor")
+                                local arm = char:GetAttribute("MaxArmor")
+                                if type(ar) == "number" and type(arm) == "number" and arm > 0 then
+                                    b._armor = ar b._maxArmor = arm
+                                end
+                            end)
+                        end
+                        if b._armor then hpNow = hpNow + b._armor hpMax = hpMax + b._maxArmor end
                         local hpFrac = clampNum(hpNow / hpMax, 0, 1)
                         if b.hpBar then
                             if C.espHPBar then
@@ -1027,7 +1037,7 @@ local function FovStep()
             A.baseCand = cur
             A.baseStable = 0
         end
-        if A.baseStable >= 40 and cur >= 60 and (not A.learnedBase or cur >= A.learnedBase) then A.learnedBase = cur end
+        if cur >= 60 and ((A.baseStable >= 40 and (not A.learnedBase or cur >= A.learnedBase)) or A.baseStable >= 240) then A.learnedBase = cur end
     end
     if not C.fovEnabled then
         if A.fovApplied then
@@ -1342,7 +1352,8 @@ local function HudStep()
         end
     end
     if hudText then
-        hudText.Text = tostring(math.floor(A.fpsEMA + 0.5)) .. " FPS   " .. tostring(math.floor(A.ping * 1000 + 0.5)) .. " ms   discord@kurudojindegomen"
+        local hs = tostring(math.floor(A.fpsEMA + 0.5)) .. " FPS   " .. tostring(math.floor(A.ping * 1000 + 0.5)) .. " ms   discord@kurudojindegomen"
+        if A.hudStr ~= hs then A.hudStr = hs hudText.Text = hs end
         hudText.Position = Vector2.new(10, 10)
         hudText.Visible = true
     end
@@ -1379,6 +1390,7 @@ local function DestroyGUI()
         A.guiConns = {}
     end
     if A.guiRoot then pcall(function() A.guiRoot:Destroy() end) A.guiRoot = nil end
+    A.guiHitRects = nil
 end
 
 local function BuildUI()
@@ -1453,7 +1465,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.6", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.7", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1826,4 +1838,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.6 loaded.")
+print("[AERO] v8.7 loaded.")
