@@ -299,8 +299,9 @@ local function VisCheckPart(part, char)
     local dir = part.Position - origin
     local dist = dir.Magnitude
     if dist < 0.1 then return true end
-    RAY_FILTER[1] = LP and LP.Character RAY_FILTER[2] = A.cam
-    RAY_PARAMS.FilterDescendantsInstances = RAY_FILTER
+    local lc = LP and LP.Character
+    if lc then RAY_FILTER[1] = lc RAY_FILTER[2] = A.cam RAY_PARAMS.FilterDescendantsInstances = RAY_FILTER
+    else RAY_FILTER[1] = A.cam RAY_FILTER[2] = nil RAY_PARAMS.FilterDescendantsInstances = RAY_FILTER end
     local ok, res = pcall(function() return Workspace:Raycast(origin, dir, RAY_PARAMS) end)
     if not ok then return true end
     if not res then return true end
@@ -349,7 +350,7 @@ local function PredictPos(part, entry)
     off = Vector3.new(off.X, off.Y * yF, off.Z)
     local predScale = C.silentPredictScale or 100
     off = off * (predScale / 100)
-    if off.Magnitude > 14 then off = off.Unit * 14 end
+    if off.Magnitude > 6 then off = off.Unit * 6 end
     local jitter = Vector3.new(
         (math.random() - 0.5) * 2,
         (math.random() - 0.5) * 2,
@@ -386,7 +387,7 @@ local function SelectTarget(partMode, stickyKey)
         if IsEnemy(p, C.teamCheck) and IsAlive(p) then
             if not IsProtected(p.Character) then
                 local part = ResolvePart(p, partMode)
-                if part then
+                if part and part.Parent then
                     local entry = A.cache[p]
                     local sp, on = cam:WorldToViewportPoint(part.Position)
                     if on and sp.Z > 0 then
@@ -408,7 +409,7 @@ local function SelectTarget(partMode, stickyKey)
         for _, p in ipairs(A.players or Players:GetPlayers()) do
             if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p.Character) then
                 local part2 = ResolvePart(p, partMode)
-                if part2 then
+                if part2 and part2.Parent then
                     local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
                     if on2 and sp2.Z > 0 then
                         local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
@@ -463,14 +464,14 @@ local function CacheStep(dt)
                             return nil
                         end)
                         if okA and blended then raw = blended end
-                        local nv = e.vel:Lerp(raw, 0.45)
+                        local nv = e.vel:Lerp(raw, 1 - 0.55 ^ (dt * 60))
                         local dv = nv - e.vel
                         local maxDv = 260 * dt + 6
                         if dv.Magnitude > maxDv then nv = e.vel + dv.Unit * maxDv end
                         if nv.Magnitude < 0.5 then nv = Vector3.new() end
                         local acc = (nv - e.vel) / dt
                         if acc.Magnitude > 80 then acc = acc.Unit * 80 end
-                        e.accel = e.accel:Lerp(acc, 0.25)
+                        e.accel = e.accel:Lerp(acc, 1 - 0.75 ^ (dt * 60))
                         e.vel = nv
                     end
                 end
@@ -606,6 +607,12 @@ local function IsAcRemote(remote)
 end
 
 local function InstallHooks()
+    if A.oldNamecall then
+        local prev = A.oldNamecall
+        A.oldNamecall = nil
+        A.hooksOn = false
+        pcall(function() hookmetamethod(game, "__namecall", prev) end)
+    end
     local ncc = newcclosure or function(f) return f end
     local inHook = false
     local oldNamecall
@@ -1505,7 +1512,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.11", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.12", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1880,4 +1887,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.11 loaded.")
+print("[AERO] v8.12 loaded.")
