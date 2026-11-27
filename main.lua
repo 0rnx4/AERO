@@ -325,17 +325,23 @@ local function VisCheckPart(part, char)
     if okT and tr and tr >= 0.75 then return true end
     return false
 end
-local function VisCached(p, part, char)
+local function VisCached(p, part, char, pool)
     local byPart = A.visCache[p]
     if not byPart then byPart = {} A.visCache[p] = byPart end
     local e = byPart[part]
     if e and (A.frame - (e.frame or 0)) <= 1 then return e.ok end
-    if A.visBudgetFrame ~= A.frame then A.visBudgetFrame = A.frame A.visRayLeft = 8 end
-    if (A.visRayLeft or 0) <= 0 then
+    if A.visBudgetFrame ~= A.frame then
+        A.visBudgetFrame = A.frame
+        A.visRayAim = 8
+        A.visRayEsp = 4
+    end
+    local left
+    if pool == "esp" then left = A.visRayEsp or 0 else left = A.visRayAim or 0 end
+    if left <= 0 then
         if e then return e.ok end
         return false
     end
-    A.visRayLeft = A.visRayLeft - 1
+    if pool == "esp" then A.visRayEsp = left - 1 else A.visRayAim = left - 1 end
     local ok = VisCheckPart(part, char)
     byPart[part] = {ok = ok, frame = A.frame}
     return ok
@@ -612,13 +618,13 @@ local function FindFireRemote()
                         local par = d.Parent
                         local pn = par and par.Name and par.Name:lower() or ""
                         if pn:find("kinetic", 1, true) or pn:find("weapon", 1, true) then best = d break end
-                        if not best then best = d end
                     end
                 end
             end
         end)
         if best and A.fireRemote ~= best then A.fireRemote = best A.fireSeen = false end
     end
+    if A.fireRemote and not A.fireRemote.Parent then A.fireRemote = nil A.fireSeen = false end
     return A.fireRemote
 end
 local function RefreshSilentTarget()
@@ -689,7 +695,7 @@ local function RestoreNamecallHook()
     local prev = A.oldNamecall
     if not prev then return true end
     local okR = pcall(function() hookmetamethod(game, "__namecall", prev) end)
-    if okR then A.oldNamecall = nil end
+    if okR then A.oldNamecall = nil A.lastHookFn = nil end
     return okR
 end
 local function InstallHooks()
@@ -734,34 +740,38 @@ local function InstallHooks()
         return true, oldNamecall(self, table.unpack(args))
     end
     local hookFn
-    local function hookCore(self, ...)
-        if A.unloaded then return oldNamecall(self, ...) end
-        if inHook then return oldNamecall(self, ...) end
+    local function pass(self, ...)
+            dispatched = true
+            return oldNamecall(self, ...)
+        end
+        local function hookCore(self, ...)
+        if A.unloaded then return pass(self, ...) end
+        if inHook then return pass(self, ...) end
         local method = getnamecallmethod()
-        if method ~= "FireServer" then return oldNamecall(self, ...) end
-        if IsAcRemote(self) then return oldNamecall(self, ...) end
+        if method ~= "FireServer" then return pass(self, ...) end
+        if IsAcRemote(self) then return pass(self, ...) end
         if not A.fireRemote then FindFireRemote() end
         if self ~= A.fireRemote then
             if IsFireShaped(self, ...) and not A.fireSeen then
                 A.fireRemote = self
                 A.fireSeen = true
             else
-                return oldNamecall(self, ...)
+                return pass(self, ...)
             end
         else
             A.fireSeen = true
         end
-        if checkcaller and checkcaller() then return oldNamecall(self, ...) end
+        if checkcaller and checkcaller() then return pass(self, ...) end
         local seqArg = select(6, ...)
         if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
         A.lastFire = tick()
-        if not C.silentEnabled then return oldNamecall(self, ...) end
+        if not C.silentEnabled then return pass(self, ...) end
         inHook = true
         local res = {pcall(handleFire, self, ...)}
         inHook = false
         if res[1] and res[2] then return res[3], res[4], res[5], res[6], res[7], res[8], res[9], res[10] end
         if dispatched then return end
-        return oldNamecall(self, ...)
+        return pass(self, ...)
     end
     hookFn = ncc(function(self, ...)
         if not oldNamecall then
@@ -772,7 +782,7 @@ local function InstallHooks()
         dispatched = false
         local res = table.pack(pcall(hookCore, self, ...))
         if res[1] then return table.unpack(res, 2, res.n) end
-        if dispatched then return end
+        if dispatched then error(res[2], 0) end
         return oldNamecall(self, ...)
     end)
     StealthMark(hookFn)
@@ -781,16 +791,23 @@ local function InstallHooks()
         local mt = getrawmetatable(game)
         if mt and type(mt.__namecall) == "function" and mt.__namecall ~= hookFn then prevNC = mt.__namecall end
     end)
+    if A.lastHookFn then
+        local curH = nil
+        pcall(function() local mt2 = getrawmetatable(game) if mt2 then curH = mt2.__namecall end end)
+        if curH == A.lastHookFn then A.hooksOn = true return end
+    end
     local origHook = hookmetamethod(game, "__namecall", hookFn)
     if type(origHook) == "function" then
         oldNamecall = origHook
         A.oldNamecall = origHook
         A.lastKnownNC = origHook
+        A.lastHookFn = hookFn
         A.hooksOn = true
     elseif prevNC then
         oldNamecall = prevNC
         A.oldNamecall = prevNC
         A.lastKnownNC = prevNC
+        A.lastHookFn = hookFn
         A.hooksOn = true
     end
 end
@@ -832,10 +849,18 @@ local function DoRemoteShot(part, goal)
     local origin = hrp.Position
     local nd = goal - origin
     if nd.Magnitude <= 0.01 then return false end
+    local shotPart = part
+    if (C.silentHitChance or 100) < 100 and math.random(1, 100) > (C.silentHitChance or 100) then
+        local cam = A.cam
+        if cam then goal = origin + cam.CFrame.LookVector * nd.Magnitude end
+        shotPart = nil
+        nd = goal - origin
+        if nd.Magnitude <= 0.01 then return false end
+    end
     local seq = (A.fireSeq or 0) + 1
     A.fireSeq = seq
     A.lastRemoteShot = tick()
-    local ok = pcall(function() remote:FireServer(weapon, origin, nd.Unit, part, goal, seq) end)
+    local ok = pcall(function() remote:FireServer(weapon, origin, nd.Unit, shotPart, goal, seq) end)
     return ok
 end
 local function FireRemoteShot(part, goal)
@@ -870,12 +895,7 @@ local function TriggerStep()
     if not A.triggerStart then A.triggerStart = tick() end
     if (tick() - A.triggerStart) * 1000 >= (C.triggerDelay or 60) then
         A.triggerStart = tick()
-        if plr and plr == A.silentTarget then
-            A.silentRollOk = nil
-            local g2 = SilentGoal()
-            if not g2 then return end
-            goal = g2
-        end
+        if plr and part and not VisCheckPart(part, plr.Character) then return end
         local function fireViaTool()
             local lchar = LP and LP.Character
             local tool = lchar and lchar:FindFirstChildOfClass("Tool")
@@ -1073,7 +1093,7 @@ local function EspStep()
                         local baseCol = enemy and ESP_COL_ENEMY or ESP_COL_TEAM
                         local headP = (e and e.char == char and e.head) or (char and char:FindFirstChild("Head"))
                         if enemy and C.espVisColor then
-                            if headP and VisCached(p, headP, char) then baseCol = ESP_COL_VIS end
+                            if headP and VisCached(p, headP, char, "esp") then baseCol = ESP_COL_VIS end
                         end
                         if b.corners then for _, o in ipairs(b.corners) do if o then o.Visible = false end end end
                         if b.cornersOut then for _, o in ipairs(b.cornersOut) do if o then o.Visible = false end end end
@@ -1243,7 +1263,7 @@ local function FovStep()
     elseif cur >= base - 1 and not inputADS then
         A.adsActive = false
     end
-    if not A.adsActive then
+    if not A.adsActive and not C.fovEnabled then
         if math.abs(cur - (A.baseCand or -100)) <= 0.3 then
             A.baseStable = (A.baseStable or 0) + 1
         else
@@ -1255,19 +1275,15 @@ local function FovStep()
     if not C.fovEnabled then
         if A.fovApplied then
             A.fovApplied = false
-            if A.origFOV then pcall(function() cam.FieldOfView = A.origFOV end) end
+            local rb = A.learnedBase or A.origFOV if rb then pcall(function() cam.FieldOfView = rb end) end
             if A.origStretch ~= nil then pcall(function() cam.ViewStretch = A.origStretch end) end
             A.lastSetFOV = nil
         end
         A.desiredFOV = nil
-        local rOff = 1
-        if A.learnedBase and A.learnedBase > 5 then rOff = math.tan(math.rad(cur / 2)) / math.tan(math.rad(A.learnedBase / 2)) end
-        A.zoomSmooth = LerpNum(A.zoomSmooth or 1, clampNum(rOff, 0.08, 1), 0.2)
         return
     end
     A.fovApplied = true
     local desired = C.fovValue
-    A.desiredFOV = desired
     if A.adsActive and A.adsFOV then
         local ratio = math.tan(math.rad(A.adsFOV / 2)) / math.tan(math.rad(base / 2))
         if C.fovKeepADS then
@@ -1277,8 +1293,7 @@ local function FovStep()
             desired = clampNum(desired, 5, 120)
         end
     end
-    A.zoomTarget = math.tan(math.rad(desired / 2)) / math.tan(math.rad(base / 2))
-    A.zoomSmooth = LerpNum(A.zoomSmooth or 1, clampNum(A.zoomTarget, 0.08, 1), 0.25)
+    A.desiredFOV = desired
     if math.abs(cur - desired) > 0.05 then
         pcall(function() cam.FieldOfView = desired end)
         A.lastSetFOV = desired
@@ -1294,7 +1309,7 @@ end
 local function RestoreFOV()
     local cam = A.cam or Workspace.CurrentCamera
     if cam then
-        if A.origFOV then pcall(function() cam.FieldOfView = A.origFOV end) end
+        local rb = A.learnedBase or A.origFOV if rb then pcall(function() cam.FieldOfView = rb end) end
         if A.origStretch ~= nil then pcall(function() cam.ViewStretch = A.origStretch end) end
     end
     if LP then
@@ -1439,7 +1454,7 @@ local function ApplyToInstance(inst, tier)
             end
             if tier >= 4 and C.optMaterial and inst:IsA("MeshPart") then
                 for _, ch in ipairs(inst:GetChildren()) do
-                    if ch:IsA("SurfaceAppearance") then pcall(function() ch:Destroy() end) end
+                    if ch:IsA("SurfaceAppearance") then SaveProp(ch, "Parent") pcall(function() ch.Parent = nil end) end
                 end
             end
         elseif inst:IsA("Light") then
@@ -1701,7 +1716,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.6", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.7", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1910,7 +1925,7 @@ local function BuildUI()
         for _, mn in ipairs({"Toggle", "Slider", "Dropdown", "Button", "Paragraph"}) do
             local origM = t[mn]
             if type(origM) == "function" then
-                t[mn] = function(self, spec) local okM, rM = pcall(origM, self, spec) if okM then return rM end return nil end
+                t[mn] = function(self, spec) local okM, rM = pcall(origM, self, spec) if okM then return rM end print("[AERO] control failed: " .. tostring(mn)) return nil end
             end
         end
         return t
@@ -2098,4 +2113,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v9.6 loaded.")
+print("[AERO] v9.7 loaded.")
