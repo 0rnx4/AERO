@@ -268,7 +268,17 @@ local function IsProtected(p)
         if p then A.protSeen[p] = nil end
         return false
     end
-    if char:FindFirstChildOfClass("ForceField") or char:FindFirstChild("SpawnProtection") then
+    local spObj = char:FindFirstChild("SpawnProtection")
+    local spOn = false
+    if spObj then
+        if spObj:IsA("ValueBase") then
+            local v = spObj.Value
+            spOn = (v == true) or (type(v) == "number" and v > 0)
+        else
+            spOn = true
+        end
+    end
+    if char:FindFirstChildOfClass("ForceField") or spOn then
         local ps = A.protSeen[p]
         if not ps or ps.char ~= char then
             A.protSeen[p] = {char = char, at = tick()}
@@ -1809,7 +1819,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.1", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.2", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -2201,4 +2211,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v9.1 loaded.")
+print("[AERO] v9.2 loaded.")
