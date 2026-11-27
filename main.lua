@@ -331,6 +331,9 @@ local function VisCached(p, part, char)
     if not byPart then byPart = {} A.visCache[p] = byPart end
     local e = byPart[part]
     if e and (A.frame - (e.frame or 0)) <= 1 then return e.ok end
+    if A.visBudgetFrame ~= A.frame then A.visBudgetFrame = A.frame A.visRayLeft = 8 end
+    if e and (A.visRayLeft or 0) <= 0 and (A.frame - (e.frame or 0)) <= 6 then return e.ok end
+    if (A.visRayLeft or 0) > 0 then A.visRayLeft = A.visRayLeft - 1 end
     local ok = VisCheckPart(part, char)
     byPart[part] = {ok = ok, frame = A.frame}
     return ok
@@ -357,13 +360,16 @@ local function PredictPos(part, entry)
     local off = vel * t
     local acc = entry.accel
     if acc then off = off + acc * (0.5 * t * t) end
-    local yF = 0.35
-    local hum = entry.hum
-    if hum then
-        local ok, fm = pcall(function() return hum.FloorMaterial end)
-        if ok and fm == Enum.Material.Air and math.abs(vel.Y) <= 25 then yF = yF * 0.5 end
+    local yUse = off.Y * 0.35
+    local airT = entry.airTime or 0
+    if airT > 0.03 then
+        local airF = math.min(1, airT / 0.12)
+        local grav = 196.2
+        pcall(function() local g = Workspace.Gravity if type(g) == "number" and g > 0 and g == g then grav = g end end)
+        local yBal = vel.Y * t - 0.5 * grav * t * t
+        yUse = LerpNum(yUse, yBal, airF)
     end
-    off = Vector3.new(off.X, off.Y * yF, off.Z)
+    off = Vector3.new(off.X, yUse, off.Z)
     local predScale = C.silentPredictScale or 100
     off = off * (predScale / 100)
     if off.Magnitude > 6 then off = off.Unit * 6 end
@@ -487,6 +493,9 @@ local function CacheStep(dt)
             if not e.hrp then e.hrp = char and char:FindFirstChild("HumanoidRootPart") end
             if not e.head then e.head = char and char:FindFirstChild("Head") end
             if e.hum and e.hum.Health <= 0 then A.protSeen[p] = nil end
+            local isAir = false
+            if e.hum then local okF, fm = pcall(function() return e.hum.FloorMaterial end) isAir = okF and fm == Enum.Material.Air end
+            if isAir then e.airTime = (e.airTime or 0) + dt else e.airTime = 0 end
             if char and e.hrp then
                 local fh = char:FindFirstChild("HumanoidRootPart")
                 if fh and fh ~= e.hrp then e.hrp = fh e.prevPos = nil end
@@ -1628,7 +1637,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.19", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.20", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -2020,4 +2029,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.19 loaded.")
+print("[AERO] v8.20 loaded.")
