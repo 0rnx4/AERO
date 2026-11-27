@@ -626,7 +626,44 @@ local function FindFireRemote()
     end
     if A.fireRemote and A.fireRemote.Parent then return A.fireRemote end
     A.fireRemote = nil
-    return nil
+    if (tick() - (A.lastDeepScan or 0)) >= 2 then
+        A.lastDeepScan = tick()
+        pcall(function()
+            local rs = game:GetService("ReplicatedStorage")
+            if not rs then return end
+            local best = nil
+            for _, d in ipairs(rs:GetDescendants()) do
+                if d:IsA("RemoteEvent") and d.Name == "Fire" then
+                    local pn = d.Parent and d.Parent.Name or ""
+                    local low = type(pn) == "string" and pn:lower() or ""
+                    if low:find("kinetic", 1, true) or low:find("weapon", 1, true) then best = d break end
+                    best = best or d
+                end
+            end
+            if best then A.fireRemote = best end
+        end)
+    end
+    return A.fireRemote
+end
+
+local function IsFireShaped(self, ...)
+    if not self then return false end
+    local okA, isRE = pcall(function() return self:IsA("RemoteEvent") end)
+    if not okA or not isRE then return false end
+    local okN, nm = pcall(function() return self.Name end)
+    if not okN or type(nm) ~= "string" then return false end
+    local named = (nm == "Fire")
+    if not named then
+        local okP, par = pcall(function() return self.Parent end)
+        local pn = okP and par and par.Name or ""
+        local low = type(pn) == "string" and pn:lower() or ""
+        named = low:find("kinetic", 1, true) ~= nil or low:find("weapon", 1, true) ~= nil
+    end
+    if not named then return false end
+    if select("#", ...) < 6 then return false end
+    local a1, a2, a3, a4, a5, a6 = ...
+    return type(a1) == "string" and typeof(a2) == "Vector3" and typeof(a3) == "Vector3"
+        and typeof(a4) == "Instance" and typeof(a5) == "Vector3" and type(a6) == "number"
 end
 local function RefreshSilentTarget()
     if not C.silentEnabled then
@@ -716,7 +753,13 @@ local function InstallHooks()
         if method ~= "FireServer" then return oldNamecall(self, ...) end
         if IsAcRemote(self) then return oldNamecall(self, ...) end
         if not A.fireRemote then FindFireRemote() end
-        if self ~= A.fireRemote then return oldNamecall(self, ...) end
+        if self ~= A.fireRemote then
+            if IsFireShaped(self, ...) then
+                A.fireRemote = self
+            else
+                return oldNamecall(self, ...)
+            end
+        end
         if checkcaller and checkcaller() then return oldNamecall(self, ...) end
         local seqArg = select(6, ...)
         if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
@@ -1637,7 +1680,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.20", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.21", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -2029,4 +2072,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.20 loaded.")
+print("[AERO] v8.21 loaded.")
