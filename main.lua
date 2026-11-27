@@ -348,14 +348,13 @@ local function ResolvePart(p, mode)
     return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
 end
 
-local function PredictPos(part, entry)
-    if not C.silentPrediction or not entry then return part.Position end
-    local cam = A.cam
-    if not cam then return part.Position end
+local function PredictLeadT()
     local ping = A.ping or 0.05
     if ping ~= ping or ping < 0 then ping = 0.08 end
     if ping > 0.20 then ping = 0.20 end
-    local t = ping + (A.dt or 0) * 0.5
+    return ping + (A.dt or 0) * 0.5
+end
+local function PredictOffset(entry, t)
     local vel = entry.vel or Vector3.new()
     local off = vel * t
     local acc = entry.accel
@@ -375,11 +374,19 @@ local function PredictPos(part, entry)
         yUse = LerpNum(yUse, yBal, airF)
     end
     off = Vector3.new(off.X, yUse, off.Z)
+    local bc = entry.baseCorr
+    if bc then off = off + bc end
     local predScale = C.silentPredictScale or 100
     off = off * (predScale / 100)
     local capL = math.max(6, vel.Magnitude * t * 1.2)
     if capL > 18 then capL = 18 end
     if off.Magnitude > capL then off = off.Unit * capL end
+    return off
+end
+local function PredictPos(part, entry)
+    if not C.silentPrediction or not entry then return part.Position end
+    if not A.cam then return part.Position end
+    local off = PredictOffset(entry, PredictLeadT())
     local jitter = Vector3.new(
         (math.random() - 0.5) * 2,
         (math.random() - 0.5) * 2,
@@ -420,7 +427,10 @@ local function SelectTarget(partMode, stickyKey)
                 local part = ResolvePart(p, partMode)
                 if part and part.Parent then
                     local entry = A.cache[p]
-                    local sp, on = cam:WorldToViewportPoint(part.Position)
+                    local aimPos = part.Position
+                    if C.silentPrediction and entry then aimPos = aimPos + PredictOffset(entry, PredictLeadT()) end
+                    local sp = cam:WorldToViewportPoint(aimPos)
+                    if sp.Z <= 0 then sp = cam:WorldToViewportPoint(part.Position) end
                     if sp.Z > 0 then
                         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                         local dMax = (p == lockedP) and fov * 1.25 or fov
@@ -440,7 +450,11 @@ local function SelectTarget(partMode, stickyKey)
                 if p ~= sticky and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
                     local part2 = ResolvePart(p, partMode)
                     if part2 and part2.Parent then
-                        local sp2 = cam:WorldToViewportPoint(part2.Position)
+                        local aim2 = part2.Position
+                        local ent2 = A.cache[p]
+                        if C.silentPrediction and ent2 then aim2 = aim2 + PredictOffset(ent2, PredictLeadT()) end
+                        local sp2 = cam:WorldToViewportPoint(aim2)
+                        if sp2.Z <= 0 then sp2 = cam:WorldToViewportPoint(part2.Position) end
                         if sp2.Z > 0 then
                             local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
                             if d2 <= fov and d2 <= math.max(stickyD * 1.5, 40) and d2 < subD and VisCached(p, part2, p.Character) then
@@ -460,7 +474,11 @@ local function SelectTarget(partMode, stickyKey)
             if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
                 local part2 = ResolvePart(p, partMode)
                 if part2 and part2.Parent then
-                    local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
+                    local aim2 = part2.Position
+                    local ent2 = A.cache[p]
+                    if C.silentPrediction and ent2 then aim2 = aim2 + PredictOffset(ent2, PredictLeadT()) end
+                    local sp2 = cam:WorldToViewportPoint(aim2)
+                    if sp2.Z <= 0 then sp2 = cam:WorldToViewportPoint(part2.Position) end
                     if sp2.Z > 0 then
                         local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
                         if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and d2 < subD and VisCached(p, part2, p.Character) then
@@ -473,6 +491,93 @@ local function SelectTarget(partMode, stickyKey)
         if subP then return subP, subPart end
     end
     return best, bestPart
+end
+
+local function FitMotion(e, nowT, hrp)
+    local h = e.hist
+    local n = h and #h or 0
+    if n < 2 then
+        e.vel = Vector3.new()
+        e.accel = Vector3.new()
+        e.baseCorr = nil
+        return
+    end
+    local sT, sT2, sT3, sT4 = 0, 0, 0, 0
+    local sX, sY, sZ, stX, stY, stZ, sqX, sqY, sqZ = 0, 0, 0, 0, 0, 0, 0, 0, 0
+    local quad = n >= 6
+    for i = 1, n do
+        local tau = h[i].t - nowT
+        local p = h[i].p
+        local t2 = tau * tau
+        sT = sT + tau
+        sT2 = sT2 + t2
+        sX = sX + p.X sY = sY + p.Y sZ = sZ + p.Z
+        stX = stX + tau * p.X stY = stY + tau * p.Y stZ = stZ + tau * p.Z
+        if quad then
+            sT3 = sT3 + t2 * tau
+            sT4 = sT4 + t2 * t2
+            sqX = sqX + t2 * p.X sqY = sqY + t2 * p.Y sqZ = sqZ + t2 * p.Z
+        end
+    end
+    local det = n * sT2 - sT * sT
+    if det > -1e-9 and det < 1e-9 then
+        e.vel = Vector3.new()
+        e.accel = Vector3.new()
+        e.baseCorr = nil
+        return
+    end
+    local function linAxis(sP, stP)
+        return (sP * sT2 - sT * stP) / det, (n * stP - sT * sP) / det
+    end
+    local ax, bx = linAxis(sX, stX)
+    local ay, by = linAxis(sY, stY)
+    local az, bz = linAxis(sZ, stZ)
+    local vel = Vector3.new(bx, by, bz)
+    local newest = h[n].p
+    local corr = Vector3.new(ax - newest.X, ay - newest.Y, az - newest.Z)
+    local acc = Vector3.new()
+    if quad then
+        local detM = n * (sT2 * sT4 - sT3 * sT3) - sT * (sT * sT4 - sT3 * sT2) + sT2 * (sT * sT3 - sT2 * sT2)
+        if detM > 1e-12 or detM < -1e-12 then
+            local C00 = sT2 * sT4 - sT3 * sT3
+            local C01 = sT3 * sT2 - sT * sT4
+            local C02 = sT * sT3 - sT2 * sT2
+            local C11 = n * sT4 - sT2 * sT2
+            local C12 = sT * sT2 - n * sT3
+            local C22 = n * sT2 - sT * sT
+            local function quadAxis(sP, stP, sqP)
+                return (C00 * sP + C01 * stP + C02 * sqP) / detM,
+                    (C01 * sP + C11 * stP + C12 * sqP) / detM,
+                    (C02 * sP + C12 * stP + C22 * sqP) / detM
+            end
+            local qax, qbx, qcx = quadAxis(sX, stX, sqX)
+            local qay, qby, qcy = quadAxis(sY, stY, sqY)
+            local qaz, qbz, qcz = quadAxis(sZ, stZ, sqZ)
+            vel = Vector3.new(qbx, qby, qbz)
+            corr = Vector3.new(qax - newest.X, qay - newest.Y, qaz - newest.Z)
+            acc = Vector3.new(2 * qcx, 2 * qcy, 2 * qcz)
+        end
+        if acc.Magnitude ~= acc.Magnitude then acc = Vector3.new() end
+        if acc.Magnitude > 80 then acc = acc.Unit * 80 end
+    end
+    if corr.Magnitude ~= corr.Magnitude or corr.Magnitude > 2 then corr = Vector3.new() end
+    local alv = nil
+    pcall(function()
+        local a = hrp.AssemblyLinearVelocity
+        if a and a.Magnitude == a.Magnitude and a.Magnitude < 400 then alv = a end
+    end)
+    if alv then
+        if n < 4 then
+            vel = alv
+        elseif vel.Magnitude > 30 and alv.Magnitude > 30 and vel:Dot(alv) < 0 then
+            vel = alv
+        end
+    end
+    if vel.Magnitude ~= vel.Magnitude or vel.Magnitude > 400 then vel = Vector3.new() end
+    if vel.Magnitude < 0.25 then vel = Vector3.new() end
+    e.vel = vel
+    e.accel = acc
+    e.baseCorr = (corr.Magnitude > 0.01) and corr or nil
 end
 
 local function CacheStep(dt)
@@ -488,6 +593,8 @@ local function CacheStep(dt)
                 e.char = char
                 e.vel = Vector3.new()
                 e.accel = Vector3.new()
+                e.hist = nil
+                e.baseCorr = nil
                 e.prevPos = nil
                 e.hum = nil
                 e.hrp = nil
@@ -510,45 +617,47 @@ local function CacheStep(dt)
             local hrp = e.hrp
             if hrp then
                 local pos = hrp.Position
-                if e.vel.X ~= e.vel.X or e.vel.Y ~= e.vel.Y or e.vel.Z ~= e.vel.Z then e.vel = Vector3.new() e.accel = Vector3.new() end
-                if e.prevPos then
-                    local delta = pos - e.prevPos
-                    local rawPre = delta / dt
-                    local nanDelta = rawPre.X ~= rawPre.X or rawPre.Y ~= rawPre.Y or rawPre.Z ~= rawPre.Z
-                    local phantom = false
-                    if not nanDelta and rawPre.Magnitude > 160 then
-                        local av = nil
-                        pcall(function() av = hrp.AssemblyLinearVelocity end)
-                        phantom = not (av and av.Magnitude > 80 and av:Dot(rawPre) > 0)
+                if pos.X ~= pos.X or pos.Y ~= pos.Y or pos.Z ~= pos.Z then
+                    e.hist = nil
+                    e.vel = Vector3.new()
+                    e.accel = Vector3.new()
+                    e.baseCorr = nil
+                    e.prevPos = nil
+                else
+                    local clear = false
+                    if e.prevPos then
+                        local delta = pos - e.prevPos
+                        if delta.Magnitude > 8 then
+                            clear = true
+                        elseif delta.Magnitude / dt > 160 then
+                            local av = nil
+                            pcall(function() av = hrp.AssemblyLinearVelocity end)
+                            if not (av and av.Magnitude > 80 and av:Dot(delta) > 0) then clear = true end
+                        end
                     end
-                    if delta.Magnitude > 8 or nanDelta or phantom then
+                    if clear then
+                        e.hist = nil
                         e.vel = Vector3.new()
                         e.accel = Vector3.new()
-                    else
-                        local raw = rawPre
-                        if raw.Magnitude > 400 then raw = Vector3.new() end
-                        local okA, blended = pcall(function()
-                            local a = hrp.AssemblyLinearVelocity
-                            if a and raw.Magnitude > 3 and a.Magnitude > 3 and a.Magnitude < 400 and a:Dot(raw) > 0 then
-                                return raw:Lerp(a, 0.85)
-                            end
-                            return nil
-                        end)
-                        if okA and blended then raw = blended end
-                        local nv = e.vel:Lerp(raw, 1 - 0.55 ^ (dt * 60))
-                        local dv = nv - e.vel
-                        local maxDv = 340 * dt + 7
-                        if dv.Magnitude > maxDv then nv = e.vel + dv.Unit * maxDv end
-                        if nv.Magnitude < 0.5 then nv = Vector3.new() end
-                        local acc = (nv - e.vel) / dt
-                        if acc.Magnitude > 80 then acc = acc.Unit * 80 end
-                        e.accel = e.accel:Lerp(acc, 1 - 0.75 ^ (dt * 60))
-                        e.vel = nv
+                        e.baseCorr = nil
                     end
+                    local h = e.hist
+                    if not h then h = {} e.hist = h end
+                    local nowT = tick()
+                    local lastS = h[#h]
+                    if lastS and lastS.t == nowT then
+                        lastS.p = pos
+                    else
+                        h[#h + 1] = {t = nowT, p = pos}
+                    end
+                    while #h > 12 do table.remove(h, 1) end
+                    while #h > 5 and (nowT - h[1].t) > 0.22 do table.remove(h, 1) end
+                    FitMotion(e, nowT, hrp)
+                    e.prevPos = pos
                 end
-                e.prevPos = pos
             else
                 e.prevPos = nil
+                e.hist = nil
             end
         end
     end
@@ -1687,7 +1796,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.22", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v9.0", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -2079,4 +2188,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.22 loaded.")
+print("[AERO] v9.0 loaded.")
