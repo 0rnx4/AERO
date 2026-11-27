@@ -245,7 +245,8 @@ local function RefreshTeamMode()
     local attrSeen = nil
     local attrDistinct = false
     for _, p in ipairs(Players:GetPlayers()) do
-        local tv = p:GetAttribute("Team")
+        local okA, tv = pcall(function() return p:GetAttribute("Team") end)
+        if not okA then tv = nil end
         if tv ~= nil then
             if attrSeen == nil then attrSeen = tv elseif attrSeen ~= tv then attrDistinct = true end
         end
@@ -326,10 +327,12 @@ local function VisCheckPart(part, char)
     return false
 end
 local function VisCached(p, part, char)
-    local e = A.visCache[p]
-    if e and e.part == part and (A.frame - (e.frame or 0)) <= 1 then return e.ok end
+    local byPart = A.visCache[p]
+    if not byPart then byPart = {} A.visCache[p] = byPart end
+    local e = byPart[part]
+    if e and (A.frame - (e.frame or 0)) <= 1 then return e.ok end
     local ok = VisCheckPart(part, char)
-    A.visCache[p] = {part = part, ok = ok, frame = A.frame}
+    byPart[part] = {ok = ok, frame = A.frame}
     return ok
 end
 
@@ -419,6 +422,7 @@ local function SelectTarget(partMode, stickyKey)
     end
     if sticky and stickyD and stickyD <= fov * 1.25 and (not best or best == sticky or stickyD < bestD * 1.8) then
         if not VisCached(sticky, stickyPart, sticky.Character) then
+            local subP, subPart, subD = nil, nil, math.huge
             for _, p in ipairs(A.players or Players:GetPlayers()) do
                 if p ~= sticky and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
                     local part2 = ResolvePart(p, partMode)
@@ -426,17 +430,19 @@ local function SelectTarget(partMode, stickyKey)
                         local sp2 = cam:WorldToViewportPoint(part2.Position)
                         if sp2.Z > 0 then
                             local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
-                            if d2 <= fov and d2 <= math.max(stickyD * 1.5, 40) and VisCached(p, part2, p.Character) then
-                                return p, part2
+                            if d2 <= fov and d2 <= math.max(stickyD * 1.5, 40) and d2 < subD and VisCached(p, part2, p.Character) then
+                                subP, subPart, subD = p, part2, d2
                             end
                         end
                     end
                 end
             end
+            if subP then return subP, subPart end
         end
         return sticky, stickyPart
     end
     if best and bestPart and not VisCached(best, bestPart, best.Character) then
+        local subP, subPart, subD = nil, nil, math.huge
         for _, p in ipairs(A.players or Players:GetPlayers()) do
             if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
                 local part2 = ResolvePart(p, partMode)
@@ -444,13 +450,14 @@ local function SelectTarget(partMode, stickyKey)
                     local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
                     if sp2.Z > 0 then
                         local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
-                        if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and VisCached(p, part2, p.Character) then
-                            return p, part2
+                        if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and d2 < subD and VisCached(p, part2, p.Character) then
+                            subP, subPart, subD = p, part2, d2
                         end
                     end
                 end
             end
         end
+        if subP then return subP, subPart end
     end
     return best, bestPart
 end
@@ -479,6 +486,11 @@ local function CacheStep(dt)
             if not e.hum then e.hum = GetHum(char) end
             if not e.hrp then e.hrp = char and char:FindFirstChild("HumanoidRootPart") end
             if not e.head then e.head = char and char:FindFirstChild("Head") end
+            if e.hum and e.hum.Health <= 0 then A.protSeen[p] = nil end
+            if char and e.hrp then
+                local fh = char:FindFirstChild("HumanoidRootPart")
+                if fh and fh ~= e.hrp then e.hrp = fh e.prevPos = nil end
+            end
             local hrp = e.hrp
             if hrp then
                 local pos = hrp.Position
@@ -816,7 +828,9 @@ local function TriggerStep()
     end
 end
 local function HideBundle(b)
-    if not b then return end
+    if not b or b._hidden then return end
+    b._hidden = true
+    b.sx, b.sy, b.sw, b.sh = nil, nil, nil, nil
     local function h(o) if o then o.Visible = false end end
     h(b.tracer) h(b.tracerOut) h(b.nameTxt) h(b.distTxt) h(b.hpBg) h(b.hpBar) h(b.hpTxt) h(b.headDot)
     if b.corners then for _, o in ipairs(b.corners) do h(o) end end
@@ -867,16 +881,19 @@ local function ProjectBox(char)
         cf * Vector3.new(-hx, -hy, -hz), cf * Vector3.new(hx, -hy, -hz), cf * Vector3.new(-hx, hy, -hz), cf * Vector3.new(hx, hy, -hz),
         cf * Vector3.new(-hx, -hy, hz), cf * Vector3.new(hx, -hy, hz), cf * Vector3.new(-hx, hy, hz), cf * Vector3.new(hx, hy, hz),
     }
+    local vp = cam.ViewportSize
     local minX, minY, maxX, maxY = 1e9, 1e9, -1e9, -1e9
     local any = false
     for _, w in ipairs(corners) do
-        local sp, on = cam:WorldToViewportPoint(w)
-        if on then
+        local sp = cam:WorldToViewportPoint(w)
+        if sp.Z > 0 then
+            local cx = clampNum(sp.X, -2000, vp.X + 2000)
+            local cy = clampNum(sp.Y, -2000, vp.Y + 2000)
             any = true
-            if sp.X < minX then minX = sp.X end
-            if sp.Y < minY then minY = sp.Y end
-            if sp.X > maxX then maxX = sp.X end
-            if sp.Y > maxY then maxY = sp.Y end
+            if cx < minX then minX = cx end
+            if cy < minY then minY = cy end
+            if cx > maxX then maxX = cx end
+            if cy > maxY then maxY = cy end
         end
     end
     if not any then return nil end
@@ -949,6 +966,7 @@ local function EspStep()
                         minX = false
                     else
                         local nowC = os.clock()
+                        if b._boxChar ~= char then b._boxChar = char b.aspect = nil b.hh = nil b.learnAt = nil end
                         if not b.aspect or nowC - (b.learnAt or 0) > 1 then
                             b.learnAt = nowC
                             local szS
@@ -968,6 +986,7 @@ local function EspStep()
                     end
                     if minX == false then
                     elseif minX then
+                        b._hidden = false
                         if b.sx then
                             local k = 0.5
                             minX = LerpNum(b.sx, minX, k) minY = LerpNum(b.sy, minY, k)
@@ -1139,7 +1158,7 @@ local function FovStep()
     if not cam then return end
     local cur = cam.FieldOfView
     if A.origFOV and A.origFOV >= 45 and not A.learnedBase then A.learnedBase = A.origFOV end
-    local base = A.learnedBase or C.fovValue
+    local base = A.learnedBase or (C.fovEnabled and C.fovValue or cur)
     local inputADS = A.adsBtnHeld == true
     if not inputADS then pcall(function() inputADS = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end) end
     if cur < base - 3 then
@@ -1148,19 +1167,19 @@ local function FovStep()
     elseif cur >= base - 1 and not inputADS then
         A.adsActive = false
     end
-    if not A.adsActive then
+    if not A.adsActive and not C.fovEnabled then
         if math.abs(cur - (A.baseCand or -100)) <= 0.3 then
             A.baseStable = (A.baseStable or 0) + 1
         else
             A.baseCand = cur
             A.baseStable = 0
         end
-        if cur >= 45 and ((A.baseStable >= 40 and (not A.learnedBase or cur <= A.learnedBase)) or A.baseStable >= 240) then A.learnedBase = cur end
+        if cur >= 45 and ((A.baseStable >= 40 and (not A.learnedBase or cur <= A.learnedBase)) or A.baseStable >= 240 or (A.frame < 300 and A.baseStable >= 40)) then A.learnedBase = cur end
     end
     if not C.fovEnabled then
         if A.fovApplied then
             A.fovApplied = false
-            if A.origFOV then pcall(function() cam.FieldOfView = A.origFOV end) end
+            if A.origFOV then pcall(function() cam.FieldOfView = A.learnedBase or A.origFOV end) end
             if A.origStretch ~= nil then pcall(function() cam.ViewStretch = A.origStretch end) end
             A.lastSetFOV = nil
         end
@@ -1199,7 +1218,7 @@ end
 local function RestoreFOV()
     local cam = A.cam or Workspace.CurrentCamera
     if cam then
-        if A.origFOV then pcall(function() cam.FieldOfView = A.origFOV end) end
+        if A.origFOV then pcall(function() cam.FieldOfView = A.learnedBase or A.origFOV end) end
         if A.origStretch ~= nil then pcall(function() cam.ViewStretch = A.origStretch end) end
     end
     if LP then
@@ -1323,7 +1342,7 @@ local function ApplyScalars(tier)
         if not A.fpsCapOrigin and getfpscap then
             pcall(function() local v = getfpscap() if type(v) == "number" then A.fpsCapOrigin = v end end)
         end
-        pcall(function() setfpscap(tier >= 3 and 60 or 120) end)
+        if A.fpsCapOrigin then pcall(function() setfpscap(tier >= 3 and 60 or 120) end) end
     end
 end
 local function IsOwnStuff(inst)
@@ -1344,10 +1363,12 @@ local function ApplyToInstance(inst, tier)
             end
             if tier >= 4 and C.optMaterial and inst:IsA("MeshPart") then
                 for _, ch in ipairs(inst:GetChildren()) do
-                    if ch:IsA("SurfaceAppearance") then pcall(function() ch:Destroy() end) end
+                    if ch:IsA("SurfaceAppearance") then SaveProp(ch, "Parent") pcall(function() ch.Parent = nil end) end
                 end
             end
         elseif inst:IsA("Light") then
+            if C.optEffects and tier >= 2 then SaveProp(inst, "Enabled") inst.Enabled = false end
+        elseif inst:IsA("PostEffect") then
             if C.optEffects and tier >= 2 then SaveProp(inst, "Enabled") inst.Enabled = false end
         elseif inst:IsA("BillboardGui") or inst:IsA("SurfaceGui") then
             if C.optEffects and tier >= 4 then SaveProp(inst, "Enabled") inst.Enabled = false end
@@ -1399,9 +1420,14 @@ local function RestoreOptimizer()
     A.optTier = 0
     A.optAppliedTier = 0
 end
+local function OptSignature(tier)
+    return tier .. "|" .. tostring(C.optQuality) .. tostring(C.optMaterial) .. tostring(C.optShadow) .. tostring(C.optEffects) .. tostring(C.optAvatar) .. tostring(C.optFpsCap)
+end
 local function SetTier(tier, force)
     tier = clampNum(tier or 0, 0, 4)
     if tier == A.optAppliedTier and not force then return end
+    local sig = OptSignature(tier)
+    if force and sig == A.optSig then return end
     if A.optAppliedTier > 0 then
         RestoreAllProps()
         RestoreScalars()
@@ -1410,6 +1436,7 @@ local function SetTier(tier, force)
     end
     A.optTier = tier
     A.optAppliedTier = tier
+    A.optSig = sig
     if tier > 0 then
         ApplyScalars(tier)
         BuildQueue()
@@ -1424,7 +1451,7 @@ local function SetTier(tier, force)
     end
 end
 local function OptApplyFromUI()
-    SetTier(C.optSliderTier, true)
+    A.optApplyPending = true
 end
 local function StripAvatar(char)
     if not char then return end
@@ -1449,7 +1476,10 @@ local function AdaptiveStep()
     elseif f < 42 and t < 2 then nt = t + 1
     elseif f < 50 and t < 1 then nt = 1
     elseif f > 72 and t > (C.optSliderTier or 0) then nt = t - 1 end
-    if nt ~= t then SetTier(nt) end
+    if nt ~= t and (tick() - (A.lastAdaptiveAt or 0)) >= 2 then
+        A.lastAdaptiveAt = tick()
+        SetTier(nt)
+    end
 end
 
 A.hideAllEsp = function()
@@ -1510,6 +1540,11 @@ end))
 Track(Workspace.DescendantAdded:Connect(function(inst)
     if A.optTier > 0 then EnqueueInstance(inst) end
 end))
+pcall(function()
+    Track(game:GetService("Lighting").DescendantAdded:Connect(function(inst)
+        if A.optTier > 0 then EnqueueInstance(inst) end
+    end))
+end)
 
 local Unload
 local function DestroyGUI()
@@ -1593,7 +1628,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.18", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.19", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1957,6 +1992,7 @@ task.spawn(function()
             end
         end)
         if iter % 3 == 0 then SafeCall("adaptive", AdaptiveStep) end
+        if A.optApplyPending then A.optApplyPending = false pcall(function() SetTier(C.optSliderTier, true) end) end
         if iter % 10 == 0 and (C.silentEnabled or C.triggerEnabled) and not A.hooksOn then pcall(SyncSilentHooks) end
         if A.wantHookRefresh and tick() >= A.wantHookRefresh then
             A.wantHookRefresh = nil
@@ -1984,4 +2020,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.18 loaded.")
+print("[AERO] v8.19 loaded.")
