@@ -112,36 +112,13 @@ local function RestoreNamecallHook()
     return okR
 end
 local function InstallHooks()
-    RestoreNamecallHook()
-    A.hooksOn = false
-    local hm = A.hm or hookmetamethod
-    if not hm then A.hookStage = "gate" return end
-    local grmt = A.grmt or getrawmetatable
-    local gnm = A.gnm or getnamecallmethod
-    if not gnm then A.hookStage = "gate" return end
-    local cc = A.cc or checkcaller
-    local ncc = newcclosure or GST.newcclosure or function(f) return f end
+    local ncc = newcclosure or function(f) return f end
     local inHook = false
     local oldNamecall
-    local dispatched = false
     local function handleFire(self, ...)
         if self ~= A.fireRemote then return false end
-        local argc = select("#", ...)
-        if argc < 5 then return false end
-        local a1 = select(1, ...)
-        if not (type(a1) == "string" or typeof(a1) == "Instance") then return false end
-        if typeof(select(5, ...)) ~= "Vector3" then return false end
-        if argc >= 6 and type(select(6, ...)) ~= "number" then return false end
-        A.silentRollOk = nil
         if not A.silentPartObj then RefreshSilentTarget() end
         local goal = SilentGoal()
-        if goal and A.silentTarget then
-            local okA, alive = pcall(IsAlive, A.silentTarget)
-            if okA and not alive then
-                RefreshSilentTarget()
-                goal = SilentGoal()
-            end
-        end
         if not goal then return false end
         local part = A.silentPartObj
         if not part or not part.Parent then return false end
@@ -155,111 +132,39 @@ local function InstallHooks()
         args[4] = part
         args[5] = goal
         AfterBend()
-        dispatched = true
         return true, oldNamecall(self, table.unpack(args))
     end
-    local hookFn
-    local hookRaw
-    local function pass(self, ...)
-            dispatched = true
-            return oldNamecall(self, ...)
-        end
-        local function hookCore(self, ...)
-        if A.unloaded then return pass(self, ...) end
-        if inHook then return pass(self, ...) end
-        local method = gnm()
-        if method ~= "FireServer" then return pass(self, ...) end
-        if IsAcRemote(self) then return pass(self, ...) end
+    oldNamecall = hookmetamethod(game, "__namecall", ncc(function(self, ...)
+        if inHook then return oldNamecall(self, ...) end
+        local method = getnamecallmethod()
+        if method ~= "FireServer" then return oldNamecall(self, ...) end
         if not A.fireRemote then FindFireRemote() end
-        if self ~= A.fireRemote then
-            if IsFireShaped(self, ...) and not A.fireSeen then
-                A.fireRemote = self
-                A.fireSeen = true
-            else
-                return pass(self, ...)
-            end
-        else
-            A.fireSeen = true
-        end
-        if cc and cc() then return pass(self, ...) end
+        if self ~= A.fireRemote then return oldNamecall(self, ...) end
+        if checkcaller and checkcaller() then return oldNamecall(self, ...) end
         local seqArg = select(6, ...)
         if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
         A.lastFire = tick()
-        if not C.silentEnabled then return pass(self, ...) end
+        if not C.silentEnabled then return oldNamecall(self, ...) end
         inHook = true
         local res = {pcall(handleFire, self, ...)}
         inHook = false
         if res[1] and res[2] then return res[3], res[4], res[5], res[6], res[7], res[8], res[9], res[10] end
-        if dispatched then return end
-        return pass(self, ...)
-    end
-    hookRaw = function(self, ...)
-        if not oldNamecall then
-            local f = A.lastKnownNC or A.oldNamecall
-            if type(f) == "function" and f ~= hookFn and f ~= hookRaw then oldNamecall = f A.oldNamecall = f
-            else return end
-        end
-        dispatched = false
-        local res = table.pack(pcall(hookCore, self, ...))
-        if res[1] then return table.unpack(res, 2, res.n) end
-        if dispatched then error(res[2], 0) end
         return oldNamecall(self, ...)
-    end
-    hookFn = ncc(hookRaw)
-    local prevNC = nil
-    pcall(function()
-        local mt = grmt(game)
-        if mt and type(mt.__namecall) == "function" and mt.__namecall ~= hookFn and mt.__namecall ~= hookRaw then prevNC = mt.__namecall end
-    end)
-    if A.lastHookFn then
-        local curH = nil
-        pcall(function() local mt2 = grmt(game) if mt2 then curH = mt2.__namecall end end)
-        if curH == A.lastHookFn then A.hooksOn = true return end
-    end
-    local okH, origHook = pcall(hm, game, "__namecall", hookFn)
-    if not okH then
-        okH, origHook = pcall(hm, game, "__namecall", hookRaw)
-        if okH then hookFn = hookRaw end
-    end
-    if not okH then A.hookStage = "throw" return end
-    pcall(StealthMark, hookFn)
-    if type(origHook) == "function" then
-        oldNamecall = origHook
-    elseif prevNC then
-        oldNamecall = prevNC
-    elseif A.lastKnownNC then
-        oldNamecall = A.lastKnownNC
-    elseif A.oldNamecall then
-        oldNamecall = A.oldNamecall
-    end
-    if oldNamecall then
-        A.oldNamecall = oldNamecall
-        A.lastKnownNC = oldNamecall
-    end
-    A.lastHookFn = hookFn
-    A.hookStage = nil
+    end))
+    A.oldNamecall = oldNamecall
     A.hooksOn = true
 end
 
 local function SyncSilentHooks()
     if C.silentEnabled or C.triggerEnabled then
         if A.hooksOn then return end
-        if not (A.hm or hookmetamethod) or not (A.gnm or getnamecallmethod) then A.hookStage = "gate" return end
-        local nowT = tick()
-        if A.hookRetryAt and nowT < A.hookRetryAt then return end
+        if not (hookmetamethod and getnamecallmethod) then return end
         local okI = pcall(InstallHooks)
-        if okI and A.hooksOn then
-            A.hooksOn = true
-            A.hookFails = 0
-            A.hookRetryAt = nil
-        else
-            A.hookFails = (A.hookFails or 0) + 1
-            A.hookRetryAt = nowT + math.min(0.25 * (2 ^ math.min(A.hookFails - 1, 4)), 4)
-        end
+        if okI and A.oldNamecall then A.hooksOn = true end
     else
         if not A.hooksOn and not A.oldNamecall then return end
         A.hooksOn = false
-        RestoreNamecallHook()
+        if A.oldNamecall then pcall(function() hookmetamethod(game, "__namecall", A.oldNamecall) end) A.oldNamecall = nil end
     end
 end
 A.syncSilentHooks = SyncSilentHooks
