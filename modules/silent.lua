@@ -97,17 +97,30 @@ local function IsFireShaped(remote, ...)
     return true
 end
 
+A.hm = hookmetamethod or GST.hookmetamethod
+A.gnm = getnamecallmethod or GST.getnamecallmethod
+A.grmt = getrawmetatable or GST.getrawmetatable
+A.cc = checkcaller or GST.checkcaller
+
 local function RestoreNamecallHook()
     local prev = A.oldNamecall
     if not prev then return true end
-    local okR = pcall(function() hookmetamethod(game, "__namecall", prev) end)
+    local hm = A.hm or hookmetamethod
+    if not hm then return false end
+    local okR = pcall(function() hm(game, "__namecall", prev) end)
     if okR then A.oldNamecall = nil A.lastHookFn = nil end
     return okR
 end
 local function InstallHooks()
     RestoreNamecallHook()
     A.hooksOn = false
-    local ncc = newcclosure or function(f) return f end
+    local hm = A.hm or hookmetamethod
+    if not hm then A.hookStage = "gate" return end
+    local grmt = A.grmt or getrawmetatable
+    local gnm = A.gnm or getnamecallmethod
+    if not gnm then A.hookStage = "gate" return end
+    local cc = A.cc or checkcaller
+    local ncc = newcclosure or GST.newcclosure or function(f) return f end
     local inHook = false
     local oldNamecall
     local dispatched = false
@@ -146,6 +159,7 @@ local function InstallHooks()
         return true, oldNamecall(self, table.unpack(args))
     end
     local hookFn
+    local hookRaw
     local function pass(self, ...)
             dispatched = true
             return oldNamecall(self, ...)
@@ -153,7 +167,7 @@ local function InstallHooks()
         local function hookCore(self, ...)
         if A.unloaded then return pass(self, ...) end
         if inHook then return pass(self, ...) end
-        local method = getnamecallmethod()
+        local method = gnm()
         if method ~= "FireServer" then return pass(self, ...) end
         if IsAcRemote(self) then return pass(self, ...) end
         if not A.fireRemote then FindFireRemote() end
@@ -167,7 +181,7 @@ local function InstallHooks()
         else
             A.fireSeen = true
         end
-        if checkcaller and checkcaller() then return pass(self, ...) end
+        if cc and cc() then return pass(self, ...) end
         local seqArg = select(6, ...)
         if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
         A.lastFire = tick()
@@ -179,10 +193,10 @@ local function InstallHooks()
         if dispatched then return end
         return pass(self, ...)
     end
-    hookFn = ncc(function(self, ...)
+    hookRaw = function(self, ...)
         if not oldNamecall then
             local f = A.lastKnownNC or A.oldNamecall
-            if type(f) == "function" and f ~= hookFn then oldNamecall = f A.oldNamecall = f
+            if type(f) == "function" and f ~= hookFn and f ~= hookRaw then oldNamecall = f A.oldNamecall = f
             else return end
         end
         dispatched = false
@@ -190,20 +204,25 @@ local function InstallHooks()
         if res[1] then return table.unpack(res, 2, res.n) end
         if dispatched then error(res[2], 0) end
         return oldNamecall(self, ...)
-    end)
-    StealthMark(hookFn)
+    end
+    hookFn = ncc(hookRaw)
     local prevNC = nil
     pcall(function()
-        local mt = getrawmetatable(game)
-        if mt and type(mt.__namecall) == "function" and mt.__namecall ~= hookFn then prevNC = mt.__namecall end
+        local mt = grmt(game)
+        if mt and type(mt.__namecall) == "function" and mt.__namecall ~= hookFn and mt.__namecall ~= hookRaw then prevNC = mt.__namecall end
     end)
     if A.lastHookFn then
         local curH = nil
-        pcall(function() local mt2 = getrawmetatable(game) if mt2 then curH = mt2.__namecall end end)
+        pcall(function() local mt2 = grmt(game) if mt2 then curH = mt2.__namecall end end)
         if curH == A.lastHookFn then A.hooksOn = true return end
     end
-    local okH, origHook = pcall(hookmetamethod, game, "__namecall", hookFn)
-    if not okH then error(origHook, 0) end
+    local okH, origHook = pcall(hm, game, "__namecall", hookFn)
+    if not okH then
+        okH, origHook = pcall(hm, game, "__namecall", hookRaw)
+        if okH then hookFn = hookRaw end
+    end
+    if not okH then A.hookStage = "throw" return end
+    pcall(StealthMark, hookFn)
     if type(origHook) == "function" then
         oldNamecall = origHook
     elseif prevNC then
@@ -218,13 +237,14 @@ local function InstallHooks()
         A.lastKnownNC = oldNamecall
     end
     A.lastHookFn = hookFn
+    A.hookStage = nil
     A.hooksOn = true
 end
 
 local function SyncSilentHooks()
     if C.silentEnabled or C.triggerEnabled then
         if A.hooksOn then return end
-        if not (hookmetamethod and getnamecallmethod) then return end
+        if not (A.hm or hookmetamethod) or not (A.gnm or getnamecallmethod) then A.hookStage = "gate" return end
         local nowT = tick()
         if A.hookRetryAt and nowT < A.hookRetryAt then return end
         local okI = pcall(InstallHooks)
