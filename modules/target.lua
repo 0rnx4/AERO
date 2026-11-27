@@ -195,12 +195,7 @@ local function PredictPos(part, entry)
     local predScale = C.silentPredictScale or 100
     off = off * (predScale / 100)
     if off.Magnitude > 6 then off = off.Unit * 6 end
-    if A.jitterFrame ~= A.frame then
-        A.jitterFrame = A.frame
-        A.jitterVec = Vector3.new((math.random() - 0.5) * 2, (math.random() - 0.5) * 2, (math.random() - 0.5) * 2) * 0.15
-    end
-    local jitter = A.jitterVec or Vector3.new()
-    local g = part.Position + off + jitter
+    local g = part.Position + off
     if g.X ~= g.X or g.Y ~= g.Y or g.Z ~= g.Z then return part.Position end
     return g
 end
@@ -274,6 +269,8 @@ end
 
 local function CacheStep(dt)
     A.players = Players:GetPlayers()
+    if not (C.silentEnabled or C.triggerEnabled or C.espEnabled) then A.cacheIdle = true return end
+    if A.cacheIdle then A.cacheIdle = false pcall(RefreshTeamMode) end
     if A.frame % 120 == 0 then pcall(RefreshTeamMode) end
     if dt <= 0 then dt = 1 / 60 end
     for _, p in ipairs(A.players) do
