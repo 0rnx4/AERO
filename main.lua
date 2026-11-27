@@ -267,7 +267,10 @@ local function IsProtected(char)
     if char:FindFirstChild("SpawnProtection") then return true end
     local pu = nil
     pcall(function() pu = char:GetAttribute("ProtectedUntil") end)
-    if type(pu) == "number" and pu > tick() then return true end
+    if type(pu) == "number" and pu == pu then
+        local dt = pu - tick()
+        if dt > 0 and dt <= 20 then return true end
+    end
     return false
 end
 local function IsEnemy(p, useTeamCheck)
@@ -545,15 +548,19 @@ Track(UIS.InputEnded:Connect(function(input)
 end))
 
 local function FindFireRemote()
-    if A.fireRemote and A.fireRemote.Parent then return A.fireRemote end
     local found = nil
     pcall(function()
         local rs = game:GetService("ReplicatedStorage")
         local kin = rs and rs:FindFirstChild("Kinetic")
         found = kin and kin:FindFirstChild("Fire")
     end)
-    A.fireRemote = found
-    return found
+    if found then
+        A.fireRemote = found
+        return found
+    end
+    if A.fireRemote and A.fireRemote.Parent then return A.fireRemote end
+    A.fireRemote = nil
+    return nil
 end
 local function RefreshSilentTarget()
     if not C.silentEnabled then
@@ -604,6 +611,7 @@ local function InstallHooks()
     local oldNamecall
     local function handleFire(self, ...)
         if self ~= A.fireRemote then return false end
+        A.silentRollOk = nil
         if not A.silentPartObj then RefreshSilentTarget() end
         local goal = SilentGoal()
         if not goal then return false end
@@ -1497,7 +1505,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.10", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v8.11", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -1856,6 +1864,7 @@ task.spawn(function()
             end
         end)
         if iter % 3 == 0 then SafeCall("adaptive", AdaptiveStep) end
+        if iter % 10 == 0 and (C.silentEnabled or C.triggerEnabled) and not A.hooksOn then pcall(SyncSilentHooks) end
     end
 end)
 
@@ -1871,4 +1880,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v8.10 loaded.")
+print("[AERO] v8.11 loaded.")
