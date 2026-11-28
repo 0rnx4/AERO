@@ -83,7 +83,7 @@ local function BuildUI()
         bg = Color3.fromRGB(15, 15, 18), panel = Color3.fromRGB(23, 23, 29),
         panel2 = Color3.fromRGB(32, 32, 40), elev = Color3.fromRGB(41, 41, 51),
         line = Color3.fromRGB(47, 47, 59), text = Color3.fromRGB(240, 240, 244),
-        muted = Color3.fromRGB(150, 150, 162), accent = Color3.fromRGB(240, 240, 244),
+        muted = Color3.fromRGB(182, 182, 194), accent = Color3.fromRGB(240, 240, 244),
         onAccent = Color3.fromRGB(15, 15, 18), knobOff = Color3.fromRGB(140, 140, 150),
     }
     local function mk(class, props, parent)
@@ -147,7 +147,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v10.3", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v10.4", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -224,7 +224,7 @@ local function BuildUI()
     local function NewTab(title)
         tabCount = tabCount + 1
         local t = {name = title, order = 0}
-        local btn = mk("TextButton", {Size = UDim2.fromOffset(74, 28), LayoutOrder = tabCount, BackgroundColor3 = COL.panel, BackgroundTransparency = 1, Text = title, TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false}, tabBar)
+        local btn = mk("TextButton", {Size = UDim2.fromOffset(74, 28), LayoutOrder = tabCount, BackgroundColor3 = COL.panel, BackgroundTransparency = 1, Text = title, TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, tabBar)
         addCorner(btn, 9)
         t.btn = btn
         local content = mk("ScrollingFrame", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = COL.line, CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false}, body)
@@ -242,7 +242,7 @@ local function BuildUI()
         local function titleLabels(row, spec, w)
             mk("TextLabel", {Size = UDim2.new(1, -(w or 60), 0, 20), Position = UDim2.fromOffset(10, 5), BackgroundTransparency = 1, Text = spec.Title, TextColor3 = COL.text, Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left}, row)
             if spec.Desc then
-                mk("TextLabel", {Size = UDim2.new(1, -20, 0, 14), Position = UDim2.fromOffset(10, 24), BackgroundTransparency = 1, Text = spec.Desc, TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd}, row)
+                mk("TextLabel", {Size = UDim2.new(1, -20, 0, 14), Position = UDim2.fromOffset(10, 24), BackgroundTransparency = 1, Text = spec.Desc, TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd}, row)
             end
         end
         function t:Toggle(spec)
@@ -544,4 +544,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v10.3 loaded.")
+print("[AERO] v10.4 loaded.")

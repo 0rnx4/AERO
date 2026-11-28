@@ -72,6 +72,7 @@ local function EspStep()
         for _, b in pairs(A.esp) do HideBundle(b) end
         return
     end
+    if A.frame % 2 == 1 then return end
     local vp = cam.ViewportSize
     local tracerFrom = Vector2.new(vp.X / 2, vp.Y)
     for _, p in ipairs(A.players or Players:GetPlayers()) do
