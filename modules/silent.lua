@@ -198,7 +198,7 @@ local function TriggerStep()
     if not A.triggerStart then A.triggerStart = tick() end
     if (tick() - A.triggerStart) * 1000 >= (C.triggerDelay or 60) then
         A.triggerStart = tick()
-        if plr and part and not VisCheckPart(part, plr.Character) then return end
+        if plr and part and not VisCheckPart(part, CharOf(plr)) then return end
         local function fireViaTool()
             local lchar = LP and LP.Character
             local tool = lchar and lchar:FindFirstChildOfClass("Tool")

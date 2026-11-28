@@ -1,7 +1,7 @@
 local C = {
     triggerEnabled = false, triggerDelay = 60, triggerRadius = 14, triggerInterval = 90,
     silentEnabled = false, silentPart = "頭", silentHitChance = 100, silentShowFOV = true, teamCheck = true,
-    silentFOV = 150, silentPrediction = true, silentPredictScale = 100,
+    silentFOV = 150, silentPrediction = true, silentPredictScale = 100, npcTargets = true,
     espEnabled = true, espBox = true, espSkeleton = true,
     espTracer = false, espHPBar = true, espHPText = true, espNameDist = true,
     espHeadDot = true, espShowTeam = false, espVisColor = true,

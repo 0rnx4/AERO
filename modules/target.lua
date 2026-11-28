@@ -2,9 +2,15 @@ local function GetHum(char)
     if not char then return nil end
     return char:FindFirstChildOfClass("Humanoid")
 end
+local function CharOf(x)
+    if not x then return nil end
+    local ok, isP = pcall(function() return x:IsA("Player") end)
+    if ok and isP then return x.Character end
+    return x
+end
 local function IsAlive(p)
     if not p then return false end
-    local c = p.Character
+    local c = CharOf(p)
     if not c then return false end
     local h = GetHum(c)
     return h ~= nil and h.Health > 0
@@ -79,7 +85,7 @@ local function RefreshTeamMode()
     A.teamMode = "ffa"
 end
 local function IsProtected(p)
-    local char = p and p.Character
+    local char = p and CharOf(p)
     if not char then
         if p then A.protSeen[p] = nil end
         return false
@@ -165,7 +171,7 @@ local function VisCached(p, part, char, pool)
 end
 
 local function ResolvePart(p, mode)
-    local char = p and p.Character
+    local char = p and CharOf(p)
     if not char then return nil end
     if mode == "胴体" then
         return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
@@ -224,47 +230,144 @@ local function SelectTarget(partMode, stickyKey)
     local best, bestPart, bestD = nil, nil, math.huge
     local sticky, stickyPart, stickyD = nil, nil, nil
     local lockedP = stickyKey and A[stickyKey] or nil
-    for _, p in ipairs(A.players or Players:GetPlayers()) do
-        if IsEnemy(p, C.teamCheck) and IsAlive(p) then
-            if not IsProtected(p) then
-                local part = ResolvePart(p, partMode)
-                if part and part.Parent then
-                    local entry = A.cache[p]
-                    local sp, on = cam:WorldToViewportPoint(part.Position)
-                    if on and sp.Z > 0 then
-                        local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                        local dMax = (p == lockedP) and fov * 1.25 or fov
-                        if d <= dMax then
-                            if d < bestD then bestD = d best = p bestPart = part end
-                            if stickyKey and A[stickyKey] == p then sticky = p stickyPart = part stickyD = d end
-                        end
-                    end
-                end
+    local function eval(key)
+        if not IsAlive(key) or IsProtected(key) then return end
+        local part = ResolvePart(key, partMode)
+        if not part or not part.Parent then return end
+        local sp, on = cam:WorldToViewportPoint(part.Position)
+        if on and sp.Z > 0 then
+            local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+            local dMax = (key == lockedP) and fov * 1.25 or fov
+            if d <= dMax then
+                if d < bestD then bestD = d best = key bestPart = part end
+                if stickyKey and A[stickyKey] == key then sticky = key stickyPart = part stickyD = d end
             end
         end
+    end
+    for _, p in ipairs(A.players or Players:GetPlayers()) do
+        if IsEnemy(p, C.teamCheck) then eval(p) end
+    end
+    if C.npcTargets and A.npcs then
+        for _, m in ipairs(A.npcs) do eval(m) end
     end
     if sticky and stickyD and stickyD <= fov * 1.25 and (not best or best == sticky or stickyD < bestD * 1.8) then
         return sticky, stickyPart
     end
-    if best and bestPart and not VisCached(best, bestPart, best.Character) then
+    if best and bestPart and not VisCached(best, bestPart, CharOf(best)) then
         local subP, subPart, subD = nil, nil, math.huge
-        for _, p in ipairs(A.players or Players:GetPlayers()) do
-            if p ~= best and IsEnemy(p, C.teamCheck) and IsAlive(p) and not IsProtected(p) then
-                local part2 = ResolvePart(p, partMode)
-                if part2 and part2.Parent then
-                    local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
-                    if on2 and sp2.Z > 0 then
-                        local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
-                        if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and d2 < subD and VisCached(p, part2, p.Character) then
-                            subP = p subPart = part2 subD = d2
-                        end
-                    end
+        local function evalSub(key)
+            if key == best or not IsAlive(key) or IsProtected(key) then return end
+            local part2 = ResolvePart(key, partMode)
+            if not part2 or not part2.Parent then return end
+            local sp2, on2 = cam:WorldToViewportPoint(part2.Position)
+            if on2 and sp2.Z > 0 then
+                local d2 = (Vector2.new(sp2.X, sp2.Y) - center).Magnitude
+                if d2 <= fov and d2 <= math.max(bestD * 1.5, 40) and d2 < subD and VisCached(key, part2, CharOf(key)) then
+                    subP = key subPart = part2 subD = d2
                 end
             end
+        end
+        for _, p in ipairs(A.players or Players:GetPlayers()) do
+            if IsEnemy(p, C.teamCheck) then evalSub(p) end
+        end
+        if C.npcTargets and A.npcs then
+            for _, m in ipairs(A.npcs) do evalSub(m) end
         end
         if subP then return subP, subPart end
     end
     return best, bestPart
+end
+
+local function ScanNPCs()
+    local chars = {}
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl.Character then chars[pl.Character] = true end
+    end
+    local found, seen = {}, {}
+    pcall(function()
+        for _, m in ipairs(Workspace:GetDescendants()) do
+            if m:IsA("Model") and not chars[m] then
+                if m:FindFirstChildOfClass("Humanoid") and m:FindFirstChild("HumanoidRootPart") and m:FindFirstChild("Head") then
+                    found[#found + 1] = m
+                    seen[m] = true
+                end
+            end
+        end
+    end)
+    if A.npcs then
+        for _, old in ipairs(A.npcs) do
+            if not seen[old] then
+                A.cache[old] = nil A.visCache[old] = nil A.protSeen[old] = nil
+                if A.silentTarget == old then A.silentTarget = nil A.silentPartObj = nil end
+                if A.triggerTarget == old then A.triggerTarget = nil end
+            end
+        end
+    end
+    A.npcs = found
+end
+
+local function CacheOne(p, char, dt)
+    local e = A.cache[p]
+    if not e then e = {vel = Vector3.new(), accel = Vector3.new()} A.cache[p] = e end
+    if char ~= e.char then
+        e.char = char
+        A.visCache[p] = nil
+        e.vel = Vector3.new()
+        e.accel = Vector3.new()
+        e.prevPos = nil
+        e.hum = nil
+        e.hrp = nil
+        e.head = nil
+    end
+    if e.hum and not e.hum.Parent then e.hum = nil end
+    if e.hrp and not e.hrp.Parent then e.hrp = nil e.prevPos = nil end
+    if e.head and not e.head.Parent then e.head = nil end
+    if not e.hum then e.hum = GetHum(char) end
+    if not e.hrp then e.hrp = char and char:FindFirstChild("HumanoidRootPart") end
+    if not e.head then e.head = char and char:FindFirstChild("Head") end
+    local hrp = e.hrp
+    if hrp then
+        local pos = hrp.Position
+        if e.vel.X ~= e.vel.X or e.vel.Y ~= e.vel.Y or e.vel.Z ~= e.vel.Z then e.vel = Vector3.new() e.accel = Vector3.new() end
+        if e.prevPos then
+            local delta = pos - e.prevPos
+            local rawPre = delta / dt
+            local nanDelta = rawPre.X ~= rawPre.X or rawPre.Y ~= rawPre.Y or rawPre.Z ~= rawPre.Z
+            local phantom = false
+            if not nanDelta and rawPre.Magnitude > 160 then
+                local av = nil
+                pcall(function() av = hrp.AssemblyLinearVelocity end)
+                phantom = not (av and av.Magnitude > 80 and av:Dot(rawPre) > 0)
+            end
+            if delta.Magnitude > 8 or nanDelta or phantom then
+                e.vel = Vector3.new()
+                e.accel = Vector3.new()
+            else
+                local raw = rawPre
+                if raw.Magnitude > 400 then raw = Vector3.new() end
+                local okA, blended = pcall(function()
+                    local a = hrp.AssemblyLinearVelocity
+                    if a and raw.Magnitude > 3 and a.Magnitude > 3 and a.Magnitude < 400 and a:Dot(raw) > 0 then
+                        return raw:Lerp(a, 0.65)
+                    end
+                    return nil
+                end)
+                if okA and blended then raw = blended end
+                local nv = e.vel:Lerp(raw, 1 - 0.55 ^ (dt * 60))
+                local dv = nv - e.vel
+                local maxDv = 260 * dt + 6
+                if dv.Magnitude > maxDv then nv = e.vel + dv.Unit * maxDv end
+                if nv.Magnitude < 0.5 then nv = Vector3.new() end
+                local acc = (nv - e.vel) / dt
+                if acc.Magnitude > 80 then acc = acc.Unit * 80 end
+                e.accel = e.accel:Lerp(acc, 1 - 0.75 ^ (dt * 60))
+                e.vel = nv
+            end
+        end
+        e.prevPos = pos
+    else
+        e.prevPos = nil
+    end
 end
 
 local function CacheStep(dt)
@@ -273,70 +376,16 @@ local function CacheStep(dt)
     if A.cacheIdle then A.cacheIdle = false pcall(RefreshTeamMode) end
     if A.frame % 120 == 0 then pcall(RefreshTeamMode) end
     if dt <= 0 then dt = 1 / 60 end
+    if C.npcTargets and (C.silentEnabled or C.triggerEnabled) and tick() - (A.npcScanAt or 0) > 1 then
+        A.npcScanAt = tick()
+        ScanNPCs()
+    end
     for _, p in ipairs(A.players) do
-        if p ~= LP then
-            local e = A.cache[p]
-            if not e then e = {vel = Vector3.new(), accel = Vector3.new()} A.cache[p] = e end
-            local char = p.Character
-            if char ~= e.char then
-                e.char = char
-                A.visCache[p] = nil
-                e.vel = Vector3.new()
-                e.accel = Vector3.new()
-                e.prevPos = nil
-                e.hum = nil
-                e.hrp = nil
-                e.head = nil
-            end
-            if e.hum and not e.hum.Parent then e.hum = nil end
-            if e.hrp and not e.hrp.Parent then e.hrp = nil e.prevPos = nil end
-            if e.head and not e.head.Parent then e.head = nil end
-            if not e.hum then e.hum = GetHum(char) end
-            if not e.hrp then e.hrp = char and char:FindFirstChild("HumanoidRootPart") end
-            if not e.head then e.head = char and char:FindFirstChild("Head") end
-            local hrp = e.hrp
-            if hrp then
-                local pos = hrp.Position
-                if e.vel.X ~= e.vel.X or e.vel.Y ~= e.vel.Y or e.vel.Z ~= e.vel.Z then e.vel = Vector3.new() e.accel = Vector3.new() end
-                if e.prevPos then
-                    local delta = pos - e.prevPos
-                    local rawPre = delta / dt
-                    local nanDelta = rawPre.X ~= rawPre.X or rawPre.Y ~= rawPre.Y or rawPre.Z ~= rawPre.Z
-                    local phantom = false
-                    if not nanDelta and rawPre.Magnitude > 160 then
-                        local av = nil
-                        pcall(function() av = hrp.AssemblyLinearVelocity end)
-                        phantom = not (av and av.Magnitude > 80 and av:Dot(rawPre) > 0)
-                    end
-                    if delta.Magnitude > 8 or nanDelta or phantom then
-                        e.vel = Vector3.new()
-                        e.accel = Vector3.new()
-                    else
-                        local raw = rawPre
-                        if raw.Magnitude > 400 then raw = Vector3.new() end
-                        local okA, blended = pcall(function()
-                            local a = hrp.AssemblyLinearVelocity
-                            if a and raw.Magnitude > 3 and a.Magnitude > 3 and a.Magnitude < 400 and a:Dot(raw) > 0 then
-                                return raw:Lerp(a, 0.65)
-                            end
-                            return nil
-                        end)
-                        if okA and blended then raw = blended end
-                        local nv = e.vel:Lerp(raw, 1 - 0.55 ^ (dt * 60))
-                        local dv = nv - e.vel
-                        local maxDv = 260 * dt + 6
-                        if dv.Magnitude > maxDv then nv = e.vel + dv.Unit * maxDv end
-                        if nv.Magnitude < 0.5 then nv = Vector3.new() end
-                        local acc = (nv - e.vel) / dt
-                        if acc.Magnitude > 80 then acc = acc.Unit * 80 end
-                        e.accel = e.accel:Lerp(acc, 1 - 0.75 ^ (dt * 60))
-                        e.vel = nv
-                    end
-                end
-                e.prevPos = pos
-            else
-                e.prevPos = nil
-            end
+        if p ~= LP then CacheOne(p, p.Character, dt) end
+    end
+    if A.npcs then
+        for _, m in ipairs(A.npcs) do
+            if m.Parent then CacheOne(m, m, dt) end
         end
     end
 end
