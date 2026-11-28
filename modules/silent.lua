@@ -169,7 +169,7 @@ local function InstallHooks()
         if self ~= A.fireRemote then return oldNamecall(self, ...) end
         if checkcaller and checkcaller() then return oldNamecall(self, ...) end
         local seqArg = select(6, ...)
-        if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg + math.random(0, 2) end
+        if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
         A.lastFire = tick()
         if not C.silentEnabled then return oldNamecall(self, ...) end
         inHook = true
@@ -229,7 +229,7 @@ local function DoRemoteShot(part, goal)
         nd = goal - origin
         if nd.Magnitude <= 0.01 then return false end
     end
-    local seq = (A.fireSeq or 0) + math.random(1, 3)
+    local seq = (A.fireSeq or 0) + 1
     A.fireSeq = seq
     A.lastRemoteShot = tick()
     local ok = pcall(function() remote:FireServer(weapon, origin, nd.Unit, shotPart, goal, seq) end)

@@ -213,8 +213,6 @@ local function ApplyToInstance(inst, tier)
             end
         elseif inst:IsA("Light") then
             if C.optEffects and tier >= 2 then SaveProp(inst, "Enabled") inst.Enabled = false end
-        elseif inst:IsA("BillboardGui") or inst:IsA("SurfaceGui") then
-            if C.optEffects and tier >= 4 then SaveProp(inst, "Enabled") inst.Enabled = false end
         elseif inst:IsA("Decal") or inst:IsA("Texture") then
             if C.optMaterial and tier >= 2 then SaveProp(inst, "Transparency") inst.Transparency = 1 end
             if C.optMaterial and tier >= 3 then SaveProp(inst, "Texture") pcall(function() inst.Texture = "" end) end
