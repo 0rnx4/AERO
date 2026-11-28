@@ -442,6 +442,13 @@ local function BuildUI()
     end
     local okPop, errPop = pcall(populate)
     if not okPop then print("[AERO] GUI populate failed: " .. tostring(errPop)) end
+    do
+        local SS = GST.AERO_STEALTH
+        if SS and SS.hideInstance then
+            SS.hideInstance(gui)
+            for _, d in ipairs(gui:GetDescendants()) do SS.hideInstance(d) end
+        end
+    end
 end
 
 Unload = function(replacing)

@@ -128,6 +128,7 @@ local function InstallHooks()
     local ncc = newcclosure or function(f) return f end
     local inHook = false
     local oldNamecall
+    local SS = GST.AERO_STEALTH
     local function handleFire(self, ...)
         if self ~= A.fireRemote then return false end
         if not A.silentPartObj then RefreshSilentTarget() end
@@ -146,6 +147,12 @@ local function InstallHooks()
         end
         local nd = goal - origin
         if nd.Magnitude <= 0.01 then return false end
+        if C.silentEnabled then
+            local jm = 0.03 + math.random() * 0.04
+            goal = goal + Vector3.new((math.random()-0.5)*jm, (math.random()-0.5)*jm, (math.random()-0.5)*jm)
+            nd = goal - origin
+            if nd.Magnitude <= 0.01 then return false end
+        end
         args[3] = nd.Unit
         args[4] = part
         args[5] = goal
@@ -154,7 +161,7 @@ local function InstallHooks()
         if okr then return true, r1, r2, r3, r4, r5, r6, r7, r8 end
         return true
     end
-    oldNamecall = hookmetamethod(game, "__namecall", ncc(function(self, ...)
+    local wrappedNC = ncc(function(self, ...)
         if inHook then return oldNamecall(self, ...) end
         local method = getnamecallmethod()
         if method ~= "FireServer" then return oldNamecall(self, ...) end
@@ -162,16 +169,21 @@ local function InstallHooks()
         if self ~= A.fireRemote then return oldNamecall(self, ...) end
         if checkcaller and checkcaller() then return oldNamecall(self, ...) end
         local seqArg = select(6, ...)
-        if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg end
+        if type(seqArg) == "number" and seqArg > (A.fireSeq or 0) then A.fireSeq = seqArg + math.random(0, 2) end
         A.lastFire = tick()
         if not C.silentEnabled then return oldNamecall(self, ...) end
         inHook = true
+        if SS then SS.inHook = true end
         local res = {pcall(handleFire, self, ...)}
         inHook = false
+        if SS then SS.inHook = false end
         if res[1] and res[2] then return res[3], res[4], res[5], res[6], res[7], res[8], res[9], res[10] end
         return oldNamecall(self, ...)
-    end))
+    end)
+    oldNamecall = hookmetamethod(game, "__namecall", wrappedNC)
     A.oldNamecall = oldNamecall
+    A.wrappedNamecall = wrappedNC
+    if SS and SS.registerHook then SS.registerHook(wrappedNC, oldNamecall) end
     A.hooksOn = true
 end
 
@@ -211,14 +223,22 @@ local function DoRemoteShot(part, goal)
         nd = goal - origin
         if nd.Magnitude <= 0.01 then return false end
     end
-    local seq = (A.fireSeq or 0) + 1
+    if C.silentEnabled and goal then
+        local jm = 0.03 + math.random() * 0.04
+        goal = goal + Vector3.new((math.random()-0.5)*jm, (math.random()-0.5)*jm, (math.random()-0.5)*jm)
+        nd = goal - origin
+        if nd.Magnitude <= 0.01 then return false end
+    end
+    local seq = (A.fireSeq or 0) + math.random(1, 3)
     A.fireSeq = seq
     A.lastRemoteShot = tick()
     local ok = pcall(function() remote:FireServer(weapon, origin, nd.Unit, shotPart, goal, seq) end)
     return ok
 end
 local function FireRemoteShot(part, goal)
-    if A.lastRemoteShot and (tick() - A.lastRemoteShot) < (C.triggerInterval or 90) / 1000 then return true end
+    local base = (C.triggerInterval or 90) / 1000
+    local jit = base * (0.15 + math.random() * 0.35)
+    if A.lastRemoteShot and (tick() - A.lastRemoteShot) < base + jit then return true end
     return DoRemoteShot(part, goal)
 end
 local function TriggerStep()
