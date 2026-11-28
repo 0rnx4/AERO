@@ -182,7 +182,12 @@ local function PredictPos(part, entry)
     if ping > 0.13 then ping = 0.13 end
     local t = ping + (A.dt or 0) * 0.5
     local vel = entry.vel or Vector3.new()
-    local off = vel * t
+    local age = 0
+    if entry.at then
+        age = tick() - entry.at
+        if age ~= age or age < 0 or age > 0.1 then age = 0 end
+    end
+    local off = vel * (t + age)
     local acc = entry.accel
     if acc then off = off + acc * (0.5 * t * t) end
     local yF = 0.35
@@ -334,6 +339,7 @@ local function CacheStep(dt)
                     end
                 end
                 e.prevPos = pos
+                e.at = tick()
             else
                 e.prevPos = nil
             end
