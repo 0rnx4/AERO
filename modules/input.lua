@@ -29,6 +29,7 @@ pcall(function()
         end
     end))
 end)
+if UIS.WindowFocusReleased then Track(UIS.WindowFocusReleased:Connect(function() A.adsBtnHeld = false end)) end
 Track(UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 or input.KeyCode == Enum.KeyCode.ButtonL2 then A.adsBtnHeld = false end
     if input.UserInputType == Enum.UserInputType.MouseButton1 then

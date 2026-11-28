@@ -8,12 +8,13 @@ local function FovStep()
     local cur = cam.FieldOfView
     if A.origFOV and A.origFOV >= 45 and not A.learnedBase then A.learnedBase = A.origFOV end
     local base = A.learnedBase or C.fovValue
+    local detBase = (C.fovEnabled and A.lastSetFOV) or base
     local inputADS = A.adsBtnHeld == true
     if not inputADS then pcall(function() inputADS = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end) end
-    if cur < base - 3 then
+    if cur < detBase - 3 then
         A.adsActive = true
         A.adsFOV = cur
-    elseif cur >= base - 1 and not inputADS then
+    elseif cur >= detBase - 1 and not inputADS then
         A.adsActive = false
     end
     if not A.adsActive and not C.fovEnabled then
@@ -186,7 +187,7 @@ local function ApplyScalars(tier)
         if not A.fpsCapOrigin and getfpscap then
             pcall(function() local v = getfpscap() if type(v) == "number" then A.fpsCapOrigin = v end end)
         end
-        pcall(function() setfpscap(tier >= 3 and 60 or 120) end)
+        if A.fpsCapOrigin then pcall(function() setfpscap(tier >= 3 and 60 or 120) end) end
     end
 end
 local function IsOwnStuff(inst)
@@ -305,6 +306,7 @@ end
 A.stripAvatar = StripAvatar
 local function AdaptiveStep()
     if not C.optAuto then return end
+    if tick() - (A.optAutoAt or 0) < 2.5 then return end
     local f = A.fpsEMA
     local t = A.optTier
     local nt = t
@@ -312,7 +314,7 @@ local function AdaptiveStep()
     elseif f < 42 and t < 2 then nt = t + 1
     elseif f < 50 and t < 1 then nt = 1
     elseif f > 72 and t > (C.optSliderTier or 0) then nt = t - 1 end
-    if nt ~= t then SetTier(nt) end
+    if nt ~= t then A.optAutoAt = tick() SetTier(nt) end
 end
 
 A.hideAllEsp = function()

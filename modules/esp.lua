@@ -131,7 +131,7 @@ local function EspStep()
                         local baseCol = enemy and ESP_COL_ENEMY or ESP_COL_TEAM
                         local headP = (e and e.char == char and e.head) or (char and char:FindFirstChild("Head"))
                         if enemy and C.espVisColor then
-                            if headP and VisCached(p, headP, char, "esp") then baseCol = ESP_COL_VIS end
+                            if (headP and VisCached(p, headP, char, "esp")) or (hrp and VisCached(p, hrp, char, "esp")) then baseCol = ESP_COL_VIS end
                         end
                         if b.corners then for _, o in ipairs(b.corners) do if o then o.Visible = false end end end
                         if b.cornersOut then for _, o in ipairs(b.cornersOut) do if o then o.Visible = false end end end

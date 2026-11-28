@@ -103,7 +103,7 @@ local function IsProtected(p)
     return false
 end
 local function IsEnemy(p, useTeamCheck)
-    if not p or p == LP then return false end
+    if not p or not LP or p == LP then return false end
     if not useTeamCheck then return true end
     if A.teamAttrMode then
         local lt, pt = LP:GetAttribute("Team"), p:GetAttribute("Team")
@@ -150,7 +150,7 @@ local function VisCached(p, part, char, pool)
     if A.visBudgetFrame ~= A.frame then
         A.visBudgetFrame = A.frame
         A.visRayAim = 8
-        A.visRayEsp = 4
+        A.visRayEsp = 6
     end
     local left
     if pool == "esp" then left = A.visRayEsp or 0 else left = A.visRayAim or 0 end

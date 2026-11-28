@@ -41,7 +41,7 @@ local function RefreshSilentTarget()
     end
     FindFireRemote()
     local p, part = SelectTarget(C.silentPart, "silentTarget")
-    if p ~= A.silentTarget then A.silentRollOk = nil end
+    A.silentRollOk = nil
     A.silentTarget = p
     A.silentPartObj = part
 end
@@ -62,39 +62,6 @@ local function AfterBend()
     A.silentGoalFor = nil
     A.lastFire = tick()
     A.fireHeldAt = tick()
-end
-
-local AC_PATTERNS = {"detect", "ban", "kick", "iac", "respond", "report", "anticheat", "ac_", "integrity", "flag"}
-local function IsAcRemote(remote)
-    if not remote then return false end
-    local ok, n = pcall(function() return remote.Name end)
-    if not ok or type(n) ~= "string" then return false end
-    local low = n:lower()
-    for i = 1, #AC_PATTERNS do
-        if low:find(AC_PATTERNS[i], 1, true) then return true end
-    end
-    return false
-end
-
-local function IsFireShaped(remote, ...)
-    local okA, isRE = pcall(function() return remote:IsA("RemoteEvent") end)
-    if not okA or not isRE then return false end
-    local nm = remote.Name
-    local shaped = (nm == "Fire")
-    if not shaped then
-        local par = remote.Parent
-        local pn = par and par.Name and par.Name:lower() or ""
-        if pn:find("kinetic", 1, true) or pn:find("weapon", 1, true) then shaped = true end
-    end
-    if not shaped then return false end
-    if select("#", ...) < 6 then return false end
-    local a1, a2, a3, a4, a5, a6 = ...
-    if not (type(a1) == "string" or typeof(a1) == "Instance") then return false end
-    if typeof(a2) ~= "Vector3" or typeof(a3) ~= "Vector3" then return false end
-    if not (typeof(a4) == "Instance" or a4 == nil) then return false end
-    if typeof(a5) ~= "Vector3" then return false end
-    if type(a6) ~= "number" then return false end
-    return true
 end
 
 A.hm = hookmetamethod or GST.hookmetamethod
@@ -132,7 +99,9 @@ local function InstallHooks()
         args[4] = part
         args[5] = goal
         AfterBend()
-        return true, oldNamecall(self, table.unpack(args))
+        local okr, r1, r2, r3, r4, r5, r6, r7, r8 = pcall(oldNamecall, self, table.unpack(args))
+        if okr then return true, r1, r2, r3, r4, r5, r6, r7, r8 end
+        return true
     end
     oldNamecall = hookmetamethod(game, "__namecall", ncc(function(self, ...)
         if inHook then return oldNamecall(self, ...) end
@@ -186,7 +155,7 @@ local function DoRemoteShot(part, goal)
     local shotPart = part
     if (C.silentHitChance or 100) < 100 and math.random(1, 100) > (C.silentHitChance or 100) then
         local cam = A.cam
-        if cam then goal = origin + cam.CFrame.LookVector * nd.Magnitude end
+        if cam then goal = origin + cam.CFrame.LookVector * nd.Magnitude + Vector3.new((math.random() - 0.5) * 12, (math.random() - 0.5) * 6, (math.random() - 0.5) * 12) end
         shotPart = nil
         nd = goal - origin
         if nd.Magnitude <= 0.01 then return false end

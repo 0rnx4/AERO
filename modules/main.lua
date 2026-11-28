@@ -8,10 +8,7 @@ local function HudStep()
             fovCircle.Position = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
             fovCircle.Radius = EffFOV(C.silentFOV)
             local fcol = Color3.fromRGB(255, 255, 255)
-            if not A.hooksOn then
-                if A.hookStage == "gate" then fcol = Color3.fromRGB(170, 0, 255)
-                elseif A.hookStage == "throw" then fcol = Color3.fromRGB(60, 120, 255)
-                else fcol = Color3.fromRGB(120, 120, 120) end
+            if not A.hooksOn then fcol = Color3.fromRGB(120, 120, 120)
             elseif A.silentTarget then
                 fcol = Color3.fromRGB(255, 80, 80)
                 local tp = A.silentPartObj
@@ -150,7 +147,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v10.1", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v10.2", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -478,7 +475,7 @@ Track(RunService.RenderStepped:Connect(function(dt)
     A.dt = dt
     A.frame = A.frame + 1
     A.fpsEMA = LerpNum(A.fpsEMA, 1 / dt, 0.05)
-    SafeCall("cache", CacheStep, rawDt)
+    SafeCall("cache", CacheStep, dt)
     SafeCall("fov", FovStep)
     SafeCall("silent", RefreshSilentTarget)
     SafeCall("trigger", TriggerStep)
@@ -547,4 +544,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v10.1 loaded.")
+print("[AERO] v10.2 loaded.")
