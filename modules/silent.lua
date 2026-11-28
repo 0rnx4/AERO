@@ -147,12 +147,6 @@ local function InstallHooks()
         end
         local nd = goal - origin
         if nd.Magnitude <= 0.01 then return false end
-        if C.silentEnabled then
-            local jm = 0.03 + math.random() * 0.04
-            goal = goal + Vector3.new((math.random()-0.5)*jm, (math.random()-0.5)*jm, (math.random()-0.5)*jm)
-            nd = goal - origin
-            if nd.Magnitude <= 0.01 then return false end
-        end
         args[3] = nd.Unit
         args[4] = part
         args[5] = goal
@@ -223,12 +217,6 @@ local function DoRemoteShot(part, goal)
         nd = goal - origin
         if nd.Magnitude <= 0.01 then return false end
     end
-    if C.silentEnabled and goal then
-        local jm = 0.03 + math.random() * 0.04
-        goal = goal + Vector3.new((math.random()-0.5)*jm, (math.random()-0.5)*jm, (math.random()-0.5)*jm)
-        nd = goal - origin
-        if nd.Magnitude <= 0.01 then return false end
-    end
     local seq = (A.fireSeq or 0) + 1
     A.fireSeq = seq
     A.lastRemoteShot = tick()
@@ -236,9 +224,7 @@ local function DoRemoteShot(part, goal)
     return ok
 end
 local function FireRemoteShot(part, goal)
-    local base = (C.triggerInterval or 90) / 1000
-    local jit = base * (0.15 + math.random() * 0.35)
-    if A.lastRemoteShot and (tick() - A.lastRemoteShot) < base + jit then return true end
+    if A.lastRemoteShot and (tick() - A.lastRemoteShot) < (C.triggerInterval or 90) / 1000 then return true end
     return DoRemoteShot(part, goal)
 end
 local function TriggerStep()
