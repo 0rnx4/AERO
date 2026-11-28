@@ -44,6 +44,7 @@ local function RefreshSilentTarget()
     A.silentRollOk = nil
     A.silentTarget = p
     A.silentPartObj = part
+    A.silentIsNPC = p ~= nil and CharOf(p) == p
 end
 local function SilentGoal()
     local part = A.silentPartObj
@@ -62,6 +63,51 @@ local function AfterBend()
     A.silentGoalFor = nil
     A.lastFire = tick()
     A.fireHeldAt = tick()
+end
+
+local function BotReport(part, goal, origin)
+    local char = A.silentTarget
+    if A.botLocked then
+        A.botLockShots = (A.botLockShots or 0) + 1
+        if A.botLockShots >= 25 then
+            A.botLockShots = 0
+            if (A.botDmgAt or 0) > (A.botLockAt or 0) then
+                A.botLockAt = tick()
+            else
+                A.botLocked = false
+                A.botVar = ((A.botVar or 1) % 3) + 1
+                A.botVarShots = 0
+            end
+        end
+    else
+        A.botVarShots = (A.botVarShots or 0) + 1
+        if A.botVarShots >= 10 then
+            A.botVar = ((A.botVar or 1) % 3) + 1
+            A.botVarShots = 0
+        end
+    end
+    local v = A.botVar or 1
+    if v == 2 then
+        local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("HumanoidRootPart", true))
+        if hrp then
+            local g2 = PredictPos(hrp, A.cache[char])
+            if g2 then return hrp, g2 end
+        end
+    elseif v == 3 then
+        local dir = goal - origin
+        if dir.Magnitude > 0.01 and char then
+            if not A.botRayParams then
+                local rp = RaycastParams.new()
+                rp.FilterType = Enum.RaycastFilterType.Include
+                rp.IgnoreWater = true
+                A.botRayParams = rp
+            end
+            A.botRayParams.FilterDescendantsInstances = {char}
+            local ok, hit = pcall(function() return Workspace:Raycast(origin, dir.Unit * (dir.Magnitude + 5), A.botRayParams) end)
+            if ok and hit and hit.Instance then return hit.Instance, hit.Position end
+        end
+    end
+    return part, goal
 end
 
 A.hm = hookmetamethod or GST.hookmetamethod
@@ -93,6 +139,11 @@ local function InstallHooks()
         local args = {...}
         local origin = args[2]
         if typeof(origin) ~= "Vector3" or typeof(args[3]) ~= "Vector3" then return false end
+        if A.silentIsNPC then
+            local bp, bg = BotReport(part, goal, origin)
+            if not bp or not bg then return false end
+            part, goal = bp, bg
+        end
         local nd = goal - origin
         if nd.Magnitude <= 0.01 then return false end
         args[3] = nd.Unit

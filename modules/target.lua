@@ -348,6 +348,7 @@ local function CacheOne(p, char, dt)
         e.hum = nil
         e.hrp = nil
         e.head = nil
+        e.hpPrev = nil
     end
     if e.hum and not e.hum.Parent then e.hum = nil end
     if e.hrp and not e.hrp.Parent then e.hrp = nil e.prevPos = nil end
@@ -355,6 +356,14 @@ local function CacheOne(p, char, dt)
     if not e.hum then e.hum = GetHum(char) end
     if not e.hrp then e.hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("HumanoidRootPart", true)) end
     if not e.head then e.head = char and (char:FindFirstChild("Head") or char:FindFirstChild("Head", true)) end
+    if e.hum then
+        local hpNow = e.hum.Health
+        if e.hpPrev ~= nil and hpNow < e.hpPrev and CharOf(p) == p then
+            A.botDmgAt = tick()
+            if not A.botLocked then A.botLocked = true A.botLockAt = tick() A.botLockShots = 0 end
+        end
+        e.hpPrev = hpNow
+    end
     local hrp = e.hrp
     if hrp then
         local pos = hrp.Position
