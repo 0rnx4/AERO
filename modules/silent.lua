@@ -81,14 +81,20 @@ local function BotReport(part, goal, origin)
         end
     else
         A.botVarShots = (A.botVarShots or 0) + 1
-        if A.botVarShots >= 6 then
+        if A.botVarShots >= 10 then
             A.botVar = ((A.botVar or 1) % 3) + 1
             A.botVarShots = 0
         end
     end
     local v = A.botVar or 1
-    if v == 1 then
-        local dir = part.Position - origin
+    if v == 2 then
+        local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("HumanoidRootPart", true))
+        if hrp then
+            local g2 = PredictPos(hrp, A.cache[char])
+            if g2 then return hrp, g2 end
+        end
+    elseif v == 3 then
+        local dir = goal - origin
         if dir.Magnitude > 0.01 and char then
             if not A.botRayParams then
                 local rp = RaycastParams.new()
@@ -100,13 +106,8 @@ local function BotReport(part, goal, origin)
             local ok, hit = pcall(function() return Workspace:Raycast(origin, dir.Unit * (dir.Magnitude + 5), A.botRayParams) end)
             if ok and hit and hit.Instance then return hit.Instance, hit.Position end
         end
-        return part, part.Position
-    elseif v == 2 then
-        return part, part.Position
     end
-    local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("HumanoidRootPart", true))
-    if hrp then return hrp, hrp.Position end
-    return part, part.Position
+    return part, goal
 end
 
 A.hm = hookmetamethod or GST.hookmetamethod
