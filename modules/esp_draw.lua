@@ -8,8 +8,6 @@ local function HideBundle(b)
 end
 local function CreateBundle(p)
     local b = {}
-    A.bundleSeq = (A.bundleSeq or 0) + 1
-    b.phase = A.bundleSeq % 3
     b.corners = {}
     b.cornersOut = {}
     for i = 1, 8 do

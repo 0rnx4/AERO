@@ -147,7 +147,7 @@ local function BuildUI()
     mk("Frame", {Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 73), BackgroundColor3 = COL.line, BackgroundTransparency = 0.4, BorderSizePixel = 0}, win)
     local top = mk("Frame", {Name = "TopBar", Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COL.bg, BorderSizePixel = 0, Active = true}, win)
     mk("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "AERO", TextColor3 = COL.text, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left}, top)
-    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v10.4", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
+    mk("TextLabel", {Size = UDim2.new(0, 50, 1, 0), Position = UDim2.fromOffset(56, 0), BackgroundTransparency = 1, Text = "v10.5", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left}, top)
     mk("TextLabel", {Size = UDim2.new(1, -200, 1, 0), Position = UDim2.fromOffset(110, 0), BackgroundTransparency = 1, Text = "discord@kurudojindegomen", TextColor3 = COL.muted, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left}, top)
     local minBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -72, 0, 0), BackgroundTransparency = 1, Text = "—", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false}, top)
     local closeBtn = mk("TextButton", {Size = UDim2.fromOffset(34, 38), Position = UDim2.new(1, -36, 0, 0), BackgroundTransparency = 1, Text = "✕", TextColor3 = COL.muted, Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false}, top)
@@ -390,7 +390,6 @@ local function BuildUI()
     tEsp:Toggle({Title = "頭ドット", Default = C.espHeadDot, Callback = function(v) C.espHeadDot = v SaveSoon() end})
     tEsp:Toggle({Title = "味方表示", Default = C.espShowTeam, Callback = function(v) C.espShowTeam = v SaveSoon() end})
     tEsp:Toggle({Title = "見えている敵の色変更", Default = C.espVisColor, Callback = function(v) C.espVisColor = v SaveSoon() end})
-    tEsp:Slider({Title = "描画距離", Step = 10, Value = {Min = 100, Max = 2000, Default = C.espRenderDist}, Callback = function(v) C.espRenderDist = v SaveSoon() end})
 
     tFov:Toggle({Title = "FOV有効", Default = C.fovEnabled, Callback = function(v) C.fovEnabled = v FovStep() SaveSoon() end})
     tFov:Slider({Title = "FOV", Step = 1, Value = {Min = 70, Max = 120, Default = C.fovValue}, Callback = function(v) C.fovValue = v FovStep() SaveSoon() end})
@@ -544,4 +543,4 @@ if C.autoExecute and queue_on_teleport and not GST.__aero_noauto then
     end)
 end
 GST.__aero_noauto = false
-print("[AERO] v10.4 loaded.")
+print("[AERO] v10.5 loaded.")

@@ -42,7 +42,7 @@ local function LoadConfig()
             fovValue = {70, 120}, silentHitChance = {1, 100},
             triggerDelay = {0, 300}, triggerRadius = {1, 60}, triggerInterval = {50, 300},
             silentFOV = {40, 600}, silentPredictScale = {0, 200},
-            espRenderDist = {100, 2000}, fovStretch = {50, 200}, optSliderTier = {0, 4},
+            fovStretch = {50, 200}, optSliderTier = {0, 4},
         }
         for k, v in pairs(data) do
             if CDEF[k] ~= nil and type(v) == type(CDEF[k]) then

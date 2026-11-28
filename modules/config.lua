@@ -4,7 +4,7 @@ local C = {
     silentFOV = 150, silentPrediction = true, silentPredictScale = 100,
     espEnabled = true, espBox = true, espSkeleton = true,
     espTracer = false, espHPBar = true, espHPText = true, espNameDist = true,
-    espHeadDot = true, espShowTeam = false, espVisColor = true, espRenderDist = 800,
+    espHeadDot = true, espShowTeam = false, espVisColor = true,
     fovEnabled = true, fovValue = 110, fovStretch = 100, fovKeepADS = true,
     optSliderTier = 0, optAuto = false,
     optQuality = true, optLighting = true, optPost = true, optMaterial = true,
