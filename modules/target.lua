@@ -349,6 +349,7 @@ local function CacheOne(p, char, dt)
         e.hrp = nil
         e.head = nil
         e.hpPrev = nil
+        e.hpAttrPrev = nil
     end
     if e.hum and not e.hum.Parent then e.hum = nil end
     if e.hrp and not e.hrp.Parent then e.hrp = nil e.prevPos = nil end
@@ -363,6 +364,24 @@ local function CacheOne(p, char, dt)
             if not A.botLocked then A.botLocked = true A.botLockAt = tick() A.botLockShots = 0 end
         end
         e.hpPrev = hpNow
+    end
+    if CharOf(p) == p then
+        local tot = nil
+        pcall(function()
+            local h = char:GetAttribute("Health")
+            if type(h) ~= "number" then h = char:GetAttribute("HP") end
+            if type(h) == "number" then
+                local a = char:GetAttribute("Armor")
+                tot = h + (type(a) == "number" and a or 0)
+            end
+        end)
+        if tot ~= nil then
+            if e.hpAttrPrev ~= nil and tot < e.hpAttrPrev then
+                A.botDmgAt = tick()
+                if not A.botLocked then A.botLocked = true A.botLockAt = tick() A.botLockShots = 0 end
+            end
+            e.hpAttrPrev = tot
+        end
     end
     local hrp = e.hrp
     if hrp then
