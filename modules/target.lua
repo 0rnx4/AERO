@@ -1,6 +1,14 @@
 local function GetHum(char)
     if not char then return nil end
-    return char:FindFirstChildOfClass("Humanoid")
+    local h = char:FindFirstChildOfClass("Humanoid")
+    if h then return h end
+    for _, d in ipairs(char:GetChildren()) do
+        if d:IsA("Model") then
+            local h2 = d:FindFirstChildOfClass("Humanoid")
+            if h2 then return h2 end
+        end
+    end
+    return nil
 end
 local function CharOf(x)
     if not x then return nil end
@@ -13,7 +21,12 @@ local function IsAlive(p)
     local c = CharOf(p)
     if not c then return false end
     local h = GetHum(c)
-    return h ~= nil and h.Health > 0
+    if h then return h.Health > 0 end
+    if c ~= p then return false end
+    local hp = nil
+    pcall(function() hp = c:GetAttribute("Health") end)
+    if type(hp) == "number" then return hp > 0 end
+    return true
 end
 
 local CONFIG_FILE = "aero_config_v4.json"
@@ -175,8 +188,10 @@ local function ResolvePart(p, mode)
     if not char then return nil end
     if mode == "胴体" then
         return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+            or char:FindFirstChild("HumanoidRootPart", true) or char:FindFirstChild("UpperTorso", true) or char:FindFirstChild("Torso", true)
     end
     return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+        or char:FindFirstChild("Head", true) or char:FindFirstChild("HumanoidRootPart", true)
 end
 
 local function PredictPos(part, entry)
@@ -284,13 +299,28 @@ local function ScanNPCs()
         if pl.Character then chars[pl.Character] = true end
     end
     local found, seen = {}, {}
+    local function isBot(m)
+        if chars[m] then return false end
+        local anc = m.Parent
+        while anc do
+            if seen[anc] then return false end
+            anc = anc.Parent
+        end
+        local head = m:FindFirstChild("Head", true)
+        local root = m:FindFirstChild("HumanoidRootPart", true) or m:FindFirstChild("RootPart", true)
+            or m:FindFirstChild("UpperTorso", true) or m:FindFirstChild("Torso", true)
+        if not head or not root then return false end
+        if GetHum(m) then return true end
+        local hp = nil
+        pcall(function() hp = m:GetAttribute("Health") end)
+        if type(hp) == "number" then return true end
+        return true
+    end
     pcall(function()
         for _, m in ipairs(Workspace:GetDescendants()) do
-            if m:IsA("Model") and not chars[m] then
-                if m:FindFirstChildOfClass("Humanoid") and m:FindFirstChild("HumanoidRootPart") and m:FindFirstChild("Head") then
-                    found[#found + 1] = m
-                    seen[m] = true
-                end
+            if m:IsA("Model") and isBot(m) then
+                found[#found + 1] = m
+                seen[m] = true
             end
         end
     end)
@@ -323,8 +353,8 @@ local function CacheOne(p, char, dt)
     if e.hrp and not e.hrp.Parent then e.hrp = nil e.prevPos = nil end
     if e.head and not e.head.Parent then e.head = nil end
     if not e.hum then e.hum = GetHum(char) end
-    if not e.hrp then e.hrp = char and char:FindFirstChild("HumanoidRootPart") end
-    if not e.head then e.head = char and char:FindFirstChild("Head") end
+    if not e.hrp then e.hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("HumanoidRootPart", true)) end
+    if not e.head then e.head = char and (char:FindFirstChild("Head") or char:FindFirstChild("Head", true)) end
     local hrp = e.hrp
     if hrp then
         local pos = hrp.Position
