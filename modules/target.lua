@@ -247,7 +247,7 @@ local function SelectTarget(partMode, stickyKey)
     for _, p in ipairs(A.players or Players:GetPlayers()) do
         if IsEnemy(p, C.teamCheck) then eval(p) end
     end
-    if C.npcTargets and A.npcs then
+    if A.npcs then
         for _, m in ipairs(A.npcs) do eval(m) end
     end
     if sticky and stickyD and stickyD <= fov * 1.25 and (not best or best == sticky or stickyD < bestD * 1.8) then
@@ -270,7 +270,7 @@ local function SelectTarget(partMode, stickyKey)
         for _, p in ipairs(A.players or Players:GetPlayers()) do
             if IsEnemy(p, C.teamCheck) then evalSub(p) end
         end
-        if C.npcTargets and A.npcs then
+        if A.npcs then
             for _, m in ipairs(A.npcs) do evalSub(m) end
         end
         if subP then return subP, subPart end
@@ -376,7 +376,7 @@ local function CacheStep(dt)
     if A.cacheIdle then A.cacheIdle = false pcall(RefreshTeamMode) end
     if A.frame % 120 == 0 then pcall(RefreshTeamMode) end
     if dt <= 0 then dt = 1 / 60 end
-    if C.npcTargets and (C.silentEnabled or C.triggerEnabled) and tick() - (A.npcScanAt or 0) > 1 then
+    if (C.silentEnabled or C.triggerEnabled) and tick() - (A.npcScanAt or 0) > 1 then
         A.npcScanAt = tick()
         ScanNPCs()
     end
